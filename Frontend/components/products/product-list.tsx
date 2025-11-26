@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
-import { products, categories, brands, hasStock } from "@/lib/products-data"
+import { products as localProducts, categories as localCategories, brands as localBrands, hasStock } from "@/lib/products-data"
 import { ProductCard } from "./product-card"
 import { ProductFilters } from "./product-filters"
 import { PromotionalSlider } from "./promotional-slider"
@@ -27,10 +27,88 @@ export function ProductList() {
     }
   }, [searchParams])
 
+  const [fetchedProducts, setFetchedProducts] = useState<any[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // API base (frontend env var or default)
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+
+  const [categoriesList, setCategoriesList] = useState<string[] | null>(null)
+  const [brandsList, setBrandsList] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchAll = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        // products list (lightweight)
+        const [pRes, cRes, bRes] = await Promise.all([
+          fetch(`${API_BASE}/products/products/`),
+          fetch(`${API_BASE}/products/products/categories/`),
+          fetch(`${API_BASE}/products/products/brands/`),
+        ])
+
+        if (!pRes.ok) throw new Error(`Failed to fetch products: ${pRes.status}`)
+        const pData = await pRes.json()
+
+        if (cRes.ok) {
+          const cData = await cRes.json()
+          if (!cancelled) setCategoriesList(["All Categories", ...cData.map((c: any) => c.name)])
+        }
+        if (bRes.ok) {
+          const bData = await bRes.json()
+          if (!cancelled) setBrandsList(["All Brands", ...bData.map((b: any) => b.name)])
+        }
+
+        if (!cancelled) setFetchedProducts(pData)
+      } catch (err: any) {
+        console.warn("Products fetch failed, falling back to local data:", err)
+        if (!cancelled) setError(err.message || "Failed to fetch")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchAll()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Normalize backend product shape to frontend shape when fetched
+  const normalize = (item: any) => {
+    return {
+      id: item.id,
+      name: item.name,
+      brand: item.brand_name || item.brand || "",
+      category: item.category_name || item.category || "",
+      basePrice: item.base_price ?? item.basePrice ?? 0,
+      image: item.image ?? item.images?.[0] ?? "",
+      images: item.images ?? [],
+      description: item.description ?? "",
+      variants:
+        item.variants && item.variants.length > 0
+          ? item.variants
+          : item.variant_count
+          ? [
+              {
+                price: item.min_price ?? item.base_price ?? 0,
+                originalPrice: item.max_price ?? null,
+                stock: 1,
+              },
+            ]
+          : [],
+    }
+  }
+
+  const productSource = (fetchedProducts ? fetchedProducts.map(normalize) : localProducts) as any[]
+
   const filteredProducts = useMemo(() => {
     const searchQuery = searchParams.get("search")?.toLowerCase() || ""
 
-    const filtered = products.filter((product) => {
+    const filtered = productSource.filter((product: any) => {
       const categoryMatch = selectedCategory === "All Categories" || product.category === selectedCategory
       const brandMatch = selectedBrand === "All Brands" || product.brand === selectedBrand
       const priceMatch = product.basePrice >= priceRange[0] && product.basePrice <= priceRange[1]
@@ -66,8 +144,8 @@ export function ProductList() {
   }, [selectedCategory, selectedBrand, priceRange, sortBy, showInStockOnly, searchParams])
 
   const filterProps = {
-    categories,
-    brands,
+    categories: categoriesList ?? localCategories,
+    brands: brandsList ?? localBrands,
     selectedCategory,
     setSelectedCategory,
     selectedBrand,
@@ -88,7 +166,7 @@ export function ProductList() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Products</h1>
           <p className="text-muted-foreground mt-1">
-            Showing {filteredProducts.length} of {products.length} products
+            Showing {filteredProducts.length} of {productSource.length} products
           </p>
         </div>
 

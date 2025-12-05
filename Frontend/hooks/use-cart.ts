@@ -37,7 +37,7 @@ export const useCart = create<CartStore>()(
             return state
           }
 
-          const variant = product.variants.find((v) => v.id === variantId)
+          const variant = (product.variants ?? []).find((v) => v.id === variantId)
           if (!variant) {
             console.error("[v0] Variant not found:", variantId)
             return state
@@ -68,7 +68,7 @@ export const useCart = create<CartStore>()(
                   id: variant.id,
                   storage: variant.storage,
                   color: variant.color,
-                  price: variant.price,
+                        price: variant.effective_price ?? variant.price,
                   image: variant.images?.[0], // Store the first color-specific image
                 },
               },

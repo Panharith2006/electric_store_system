@@ -6,6 +6,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { usePathname } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { ShoppingBag, Heart, ShoppingCart, User, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -15,10 +16,21 @@ import { useCart } from "@/hooks/use-cart"
 export function ShopHeader() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const pathname = usePathname()
   const [searchQuery, setSearchQuery] = useState("")
   const { favorites } = useFavorites()
   const { getTotalItems } = useCart()
   const cartItemsCount = getTotalItems()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Hide the entire shop header on certain pages (cart, checkout, orders, profile)
+  if (pathname && (pathname === "/cart" || pathname.startsWith("/checkout") || pathname.startsWith("/orders") || pathname === "/profile")) {
+    return null
+  }
 
   // Initialize input from URL once, and remove URL search param when input is cleared
   useEffect(() => {
@@ -73,7 +85,7 @@ export function ShopHeader() {
             <Link href="/favorites">
               <Button variant="ghost" size="icon" className="relative">
                 <Heart className="h-5 w-5" />
-                {favorites.length > 0 && (
+                {mounted && favorites.length > 0 && (
                   <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center">
                     {favorites.length}
                   </Badge>
@@ -83,7 +95,7 @@ export function ShopHeader() {
             <Link href="/cart">
               <Button variant="ghost" size="icon" className="relative">
                 <ShoppingCart className="h-5 w-5" />
-                {cartItemsCount > 0 && (
+                {mounted && cartItemsCount > 0 && (
                   <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center">
                     {cartItemsCount}
                   </Badge>
@@ -98,36 +110,47 @@ export function ShopHeader() {
           </nav>
         </div>
 
-        {/* Navigation Links */}
-        <div className="flex h-12 items-center gap-6 text-sm">
-          <Link href="/products" className="font-medium text-foreground hover:text-primary transition-colors">
-            All Products
-          </Link>
-          <Link
-            href="/products?category=Smartphones"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Smartphones
-          </Link>
-          <Link
-            href="/products?category=Laptops"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Laptops
-          </Link>
-          <Link
-            href="/products?category=Headphones"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Headphones
-          </Link>
-          <Link
-            href="/products?category=Cameras"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Cameras
-          </Link>
-        </div>
+        {/* Navigation Links - only show on the store/products pages */}
+        {pathname && (pathname === "/" || pathname.startsWith("/products")) && (
+          <div className="flex h-12 items-center gap-6 text-sm">
+            {/* Category links disabled in Navigation - render as plain text to avoid duplicate linking */}
+            {/*
+            <Link href="/products" className="font-medium text-foreground hover:text-primary transition-colors">
+              All Products
+            </Link>
+            <Link
+              href="/products?category=Smartphones"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Smartphones
+            </Link>
+            <Link
+              href="/products?category=Laptops"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Laptops
+            </Link>
+            <Link
+              href="/products?category=Headphones"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Headphones
+            </Link>
+            <Link
+              href="/products?category=Cameras"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cameras
+            </Link>
+            */}
+
+            {/* <span className="font-medium text-foreground">All Products</span>
+            <span className="text-muted-foreground">Smartphones</span>
+            <span className="text-muted-foreground">Laptops</span>
+            <span className="text-muted-foreground">Headphones</span>
+            <span className="text-muted-foreground">Cameras</span> */}
+          </div>
+        )}
       </div>
     </header>
   )

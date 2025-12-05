@@ -1,31 +1,35 @@
+"use client"
+
 import Link from "next/link"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ShoppingBag, Shield, Smartphone, User } from "lucide-react"
+import { Navigation } from "@/components/navigation"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function HomePage() {
+  const router = useRouter()
+  const { isAuthenticated, isAdmin } = useAuth()
+
+  // If authenticated, route based on role
+  useEffect(() => {
+    // Start the app from the login page for unauthenticated visitors.
+    // Avoid automatically routing admins to `/admin` when landing on `/`.
+    if (!isAuthenticated) {
+      router.replace("/login")
+      return
+    }
+
+    // For authenticated users, route to the storefront by default.
+    // Admins can access the Admin dashboard via the Admin link.
+    router.replace("/products")
+  }, [isAuthenticated, isAdmin, router])
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">ElectroStore</span>
-          </div>
-          <nav className="flex items-center gap-4">
-            <Link href="/products">
-              <Button variant="ghost">Products</Button>
-            </Link>
-            <Link href="/login">
-              <Button variant="ghost">Login</Button>
-            </Link>
-            <Link href="/register">
-              <Button>Get Started</Button>
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <Navigation />
 
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">

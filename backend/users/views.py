@@ -24,51 +24,85 @@ class SendOTPView(APIView):
     def post(self, request):
         serializer = SendOTPSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email']
+            email = serializer.validated_data.get('email')
+            phone = serializer.validated_data.get('phone')
             purpose = serializer.validated_data.get('purpose', 'login')
-            
-            # For registration, check if email already exists
-            if purpose == 'register':
-                if User.objects.filter(email=email).exists():
-                    return Response(
-                        {'error': 'Email already registered'},
-                        status=status.HTTP_400_BAD_REQUEST
+
+            # Determine whether this contact is already registered
+            already_registered = False
+            if email:
+                already_registered = User.objects.filter(email=email).exists()
+
+            # Create an OTP record. If phone is used, we still store it under
+            # the `email` field to keep model simple; for phone we set the
+            # email to blank and use phone in the message.
+            contact_identifier = email or phone
+            otp = OTP.create_otp(contact_identifier)
+
+            # Debug: print OTP to server console when in DEBUG mode so local
+            # developers can see the code in the terminal during testing.
+            if settings.DEBUG:
+                try:
+                    # Use print so it appears in the default runserver console
+                    print(f"[DEBUG] OTP for {contact_identifier}: {otp.otp_code}")
+                except Exception:
+                    pass
+
+            # Prepare common response
+            response_data = {
+                'message': 'OTP generated',
+                'contact': contact_identifier,
+                'purpose': purpose,
+                'already_registered': already_registered,
+                'expires_in': '10 minutes'
+            }
+
+            # Attempt to send via email or SMS depending on provided data
+            if email:
+                try:
+                    send_mail(
+                        subject='Your Verification Code',
+                        message=f'Your OTP code is: {otp.otp_code}\n\nThis code will expire in 10 minutes.',
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[email],
+                        fail_silently=False,
                     )
-            
-            # For login, check if email exists
-            if purpose == 'login':
-                if not User.objects.filter(email=email).exists():
-                    return Response(
-                        {'error': 'Email not found. Please register first.'},
-                        status=status.HTTP_404_NOT_FOUND
+                    if settings.DEBUG:
+                        response_data['otp_code'] = otp.otp_code  # DEV ONLY
+                    response_data['sent_via'] = 'email'
+                    return Response(response_data, status=status.HTTP_200_OK)
+                except Exception as e:
+                    # Fallthrough to possibly try SMS or return dev-only OTP
+                    if settings.DEBUG:
+                        response_data['otp_code'] = otp.otp_code
+                    response_data['sent_via'] = 'email_failed'
+                    return Response(response_data, status=status.HTTP_200_OK)
+
+            if phone and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER:
+                # Lazy import Twilio to avoid hard dependency when not used
+                try:
+                    from twilio.rest import Client
+                    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                    msg = client.messages.create(
+                        body=f'Your OTP code is: {otp.otp_code}',
+                        from_=settings.TWILIO_PHONE_NUMBER,
+                        to=phone
                     )
-            
-            # Create OTP
-            otp = OTP.create_otp(email)
-            
-            # Send email (configure your email settings)
-            try:
-                send_mail(
-                    subject='Your Verification Code',
-                    message=f'Your OTP code is: {otp.otp_code}\n\nThis code will expire in 10 minutes.',
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[email],
-                    fail_silently=False,
-                )
-                
-                return Response({
-                    'message': 'OTP sent successfully to your email',
-                    'email': email,
-                    'expires_in': '10 minutes'
-                }, status=status.HTTP_200_OK)
-            except Exception as e:
-                # For development, return OTP in response (REMOVE IN PRODUCTION)
-                return Response({
-                    'message': 'OTP generated (email not configured)',
-                    'email': email,
-                    'otp_code': otp.otp_code,  # REMOVE IN PRODUCTION
-                    'expires_in': '10 minutes'
-                }, status=status.HTTP_200_OK)
+                    if settings.DEBUG:
+                        response_data['otp_code'] = otp.otp_code
+                    response_data['sent_via'] = 'sms'
+                    return Response(response_data, status=status.HTTP_200_OK)
+                except Exception as e:
+                    if settings.DEBUG:
+                        response_data['otp_code'] = otp.otp_code
+                    response_data['sent_via'] = 'sms_failed'
+                    return Response(response_data, status=status.HTTP_200_OK)
+
+            # If neither email nor SMS was successfully used, return dev-only code when DEBUG
+            if settings.DEBUG:
+                response_data['otp_code'] = otp.otp_code
+            response_data['sent_via'] = 'none'
+            return Response(response_data, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -81,7 +115,7 @@ class RegisterView(APIView):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            otp_code = serializer.validated_data['otp_code']
+            otp_code = serializer.validated_data['otp']
             
             # Verify OTP
             try:
@@ -132,7 +166,7 @@ class LoginView(APIView):
         serializer = OTPVerificationSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            otp_code = serializer.validated_data['otp_code']
+            otp_code = serializer.validated_data['otp']
             
             # Verify OTP
             try:
@@ -148,28 +182,39 @@ class LoginView(APIView):
                 otp.attempts += 1
                 otp.save()
                 
-                # Get user
+                # Get user (handle potential duplicates gracefully)
                 try:
-                    user = User.objects.get(email=email)
-                    
+                    users_qs = User.objects.filter(email=email)
+                    if not users_qs.exists():
+                        return Response(
+                            {'error': 'User not found'},
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+
+                    if users_qs.count() > 1:
+                        # Deterministically pick the earliest created user
+                        user = users_qs.order_by('id').first()
+                    else:
+                        user = users_qs.first()
+
                     # Mark OTP as verified
                     otp.is_verified = True
                     otp.save()
-                    
+
                     # Login user
                     login(request, user)
                     token, created = Token.objects.get_or_create(user=user)
-                    
+
                     return Response({
                         'user': UserSerializer(user).data,
                         'token': token.key,
                         'message': 'Login successful'
                     }, status=status.HTTP_200_OK)
-                    
-                except User.DoesNotExist:
+
+                except Exception as e:
                     return Response(
-                        {'error': 'User not found'},
-                        status=status.HTTP_404_NOT_FOUND
+                        {'error': str(e) or 'User retrieval error'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
                 
             except OTP.DoesNotExist:

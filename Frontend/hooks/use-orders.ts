@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import apiClient from "@/lib/api-client"
 
 export type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled"
 
@@ -37,6 +38,7 @@ export interface Order {
 
 interface OrdersStore {
   orders: Order[]
+  fetchOrders: (token?: string) => Promise<void>
   addOrder: (order: Order) => void
   getOrderById: (id: string) => Order | undefined
 }
@@ -44,75 +46,48 @@ interface OrdersStore {
 export const useOrders = create<OrdersStore>()(
   persist(
     (set, get) => ({
-      orders: [
-        // Mock order for demonstration
-        {
-          id: "1",
-          orderNumber: "ORD-2024-001234",
-          date: "2024-03-15T10:30:00Z",
-          status: "shipped",
-          items: [
-            {
-              productId: "1",
-              productName: "iPhone 15 Pro Max",
-              productImage: "/iphone-15-pro-max-titanium.png",
-              quantity: 1,
-              price: 1199,
-              variant: "Space Gray", // Added variant field
-            },
-            {
-              productId: "5",
-              productName: "Sony WH-1000XM5",
-              productImage: "/sony-wh-1000xm5-headphones-black.jpg",
-              quantity: 1,
-              price: 399,
-              variant: "Black", // Added variant field
-            },
-          ],
-          subtotal: 1598,
-          shipping: 0,
-          tax: 127.84,
-          total: 1725.84,
-          shippingAddress: {
-            street: "123 Main Street",
-            city: "New York",
-            state: "NY",
-            zipCode: "10001",
-          },
-          paymentMethod: "Visa •••• 4242",
-          trackingNumber: "1Z999AA10123456784",
-          estimatedDelivery: "2024-03-20",
-        },
-        {
-          id: "2",
-          orderNumber: "ORD-2024-001189",
-          date: "2024-03-10T14:20:00Z",
-          status: "delivered",
-          items: [
-            {
-              productId: "3",
-              productName: "MacBook Pro 16-inch M3 Max",
-              productImage: "/macbook-pro-16-inch-space-black.jpg",
-              quantity: 1,
-              price: 3499,
-              variant: "Space Black", // Added variant field
-            },
-          ],
-          subtotal: 3499,
-          shipping: 0,
-          tax: 279.92,
-          total: 3778.92,
-          shippingAddress: {
-            street: "123 Main Street",
-            city: "New York",
-            state: "NY",
-            zipCode: "10001",
-          },
-          paymentMethod: "Mastercard •••• 5555",
-          trackingNumber: "1Z999AA10123456789",
-          estimatedDelivery: "2024-03-15",
-        },
-      ],
+      orders: [],
+
+      fetchOrders: async (token?: string) => {
+        try {
+          const res = await apiClient.getOrders(token)
+          if (!res.error && Array.isArray(res.data)) {
+            // Normalize backend order shape to frontend Order
+            const normalized = (res.data as any[]).map((o) => ({
+              id: String(o.id),
+              orderNumber: o.order_number || o.id,
+              date: o.created_at || new Date().toISOString(),
+              status: (o.status || 'pending') as OrderStatus,
+              items: (o.items || []).map((it: any) => ({
+                productId: String(it.product || it.product_id || ''),
+                productName: it.product_name || it.product?.name || '',
+                productImage: it.product_image || '',
+                quantity: Number(it.quantity || 0),
+                price: Number(it.unit_price || it.price || 0),
+                variant: [it.variant_storage, it.variant_color].filter(Boolean).join(' ') || undefined,
+              })),
+              subtotal: Number(o.subtotal || 0),
+              shipping: Number(o.shipping_cost || 0),
+              tax: Number(o.tax || 0),
+              total: Number(o.total || 0),
+              shippingAddress: {
+                street: o.shipping_address_line1 || '',
+                city: o.shipping_city || '',
+                state: o.shipping_state || '',
+                zipCode: o.shipping_postal_code || '',
+              },
+              paymentMethod: o.payment_method || '',
+              trackingNumber: o.tracking_number || undefined,
+              estimatedDelivery: o.estimated_delivery || undefined,
+            }))
+
+            set({ orders: normalized })
+          }
+        } catch (e) {
+          console.error('Failed to fetch orders:', e)
+        }
+      },
+
       addOrder: (order) =>
         set((state) => ({
           orders: [order, ...state.orders],

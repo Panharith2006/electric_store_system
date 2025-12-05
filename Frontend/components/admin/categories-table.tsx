@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Edit, Trash2 } from "lucide-react"
 import { useCategories } from "@/hooks/use-categories"
+import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 
 interface CategoriesTableProps {
@@ -27,9 +29,11 @@ export function CategoriesTable({ onEdit }: CategoriesTableProps) {
   const { categories, deleteCategory } = useCategories()
   const { toast } = useToast()
 
-  const handleDelete = () => {
+  const { token } = useAuth()
+
+  const handleDelete = async () => {
     if (deleteId) {
-      deleteCategory(deleteId)
+      await deleteCategory(deleteId, token ?? undefined)
       toast({
         title: "Category deleted",
         description: "The category has been removed",
@@ -60,7 +64,11 @@ export function CategoriesTable({ onEdit }: CategoriesTableProps) {
             ) : (
               categories.map((category) => (
                 <TableRow key={category.id}>
-                  <TableCell className="font-medium">{category.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/admin/products?category=${encodeURIComponent(category.name)}`}>
+                      {category.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{category.description}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{category.productCount || 0} products</Badge>

@@ -5,9 +5,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, TrendingDown, Package, Bell } from "lucide-react"
 import { useStockManagement } from "@/hooks/use-stock-management"
+import { useAuth } from "@/contexts/auth-context"
+import { useEffect } from "react"
 
 export function StockAlerts() {
-  const { stockItems } = useStockManagement()
+  const { stockItems, fetchStock } = useStockManagement()
+  const { token } = useAuth()
+
+  useEffect(() => {
+    if (token) {
+      fetchStock(token)
+    }
+  }, [token, fetchStock])
 
   const lowStockItems = stockItems.filter((item) => item.totalStock > 0 && item.totalStock <= item.lowStockThreshold)
   const outOfStockItems = stockItems.filter((item) => item.totalStock === 0)

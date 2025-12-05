@@ -111,7 +111,7 @@ export function ProductFilters({
       </Card>
 
       {/* Stock Filter */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle className="text-base">Availability</CardTitle>
         </CardHeader>
@@ -123,7 +123,7 @@ export function ProductFilters({
             <Switch id="in-stock" checked={showInStockOnly} onCheckedChange={setShowInStockOnly} />
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   )
 }

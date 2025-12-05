@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Heart, ShoppingCart, Check, ChevronLeft, Gift, AlertCircle } from "lucide-react"
 import type { Product } from "@/lib/products-data"
-import { products, getAvailableColors, getAvailableStorages, getVariantByColorAndStorage } from "@/lib/products-data"
+import { getAvailableColors, getAvailableStorages, getVariantByColorAndStorage } from "@/lib/products-data"
 import { useFavorites } from "@/hooks/use-favorites"
 import { useCart } from "@/hooks/use-cart"
 import { useToast } from "@/hooks/use-toast"
@@ -22,9 +22,12 @@ interface ProductDetailsProps {
 
 export function ProductDetails({ product }: ProductDetailsProps) {
   const [selectedImage, setSelectedImage] = useState(0)
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([])
+  // keep a local copy so we can refresh this page when admin updates a product
+  const [localProduct, setLocalProduct] = useState<Product>(product)
 
-  const availableColors = getAvailableColors(product)
-  const availableStorages = getAvailableStorages(product)
+  const availableColors = getAvailableColors(localProduct)
+  const availableStorages = getAvailableStorages(localProduct)
   const [selectedColor, setSelectedColor] = useState<string>(availableColors[0])
   const [selectedStorage, setSelectedStorage] = useState<string>(availableStorages[0])
 
@@ -33,22 +36,68 @@ export function ProductDetails({ product }: ProductDetailsProps) {
   const { addItem } = useCart()
   const { toast } = useToast()
 
-  const selectedVariant = getVariantByColorAndStorage(product, selectedColor, selectedStorage)
-  const currentPrice = selectedVariant?.price ?? product.basePrice
+  const selectedVariant = getVariantByColorAndStorage(localProduct, selectedColor, selectedStorage)
+  const currentPrice = selectedVariant?.price ?? localProduct.basePrice
   const currentOriginalPrice = selectedVariant?.originalPrice
   const isInStock = (selectedVariant?.stock ?? 0) > 0
   const stockLevel = selectedVariant?.stock ?? 0
 
-  const relatedProducts = product.relatedProducts ? products.filter((p) => product.relatedProducts?.includes(p.id)) : []
+  // Fetch related products from API if any are specified
+  useEffect(() => {
+    if (!localProduct.relatedProducts || localProduct.relatedProducts.length === 0) return
+    
+    const fetchRelated = async () => {
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+        const ids = product.relatedProducts!.join(",")
+        const response = await fetch(`${API_BASE}/products/products/?ids=${ids}`)
+        if (response.ok) {
+          const data = await response.json()
+          setRelatedProducts(Array.isArray(data) ? data : data.results || [])
+        }
+      } catch (err) {
+        console.warn("Failed to fetch related products:", err)
+      }
+    }
+    
+    fetchRelated()
+  }, [product.relatedProducts])
 
   const displayImages =
-    selectedVariant?.images && selectedVariant.images.length > 0 ? selectedVariant.images : product.images
+    selectedVariant?.images && selectedVariant.images.length > 0 ? selectedVariant.images : localProduct.images
 
   useEffect(() => {
-    if (selectedColor && (product.category === "Smartphones" || product.category === "Laptops")) {
+    if (selectedColor && (localProduct.category === "Smartphones" || localProduct.category === "Laptops")) {
       setSelectedImage(0)
     }
-  }, [selectedColor, product.category])
+  }, [selectedColor, localProduct.category])
+
+  // keep localProduct in sync when the prop changes (e.g., a server refresh)
+  useEffect(() => {
+    setLocalProduct(product)
+  }, [product])
+
+  // Listen for admin updates (cross-tab) and refetch this product when signalled
+  useEffect(() => {
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+
+    const onStorage = async (e: StorageEvent) => {
+      try {
+        if (e.key === 'products_updated_at') {
+          const res = await fetch(`${API_BASE}/products/products/${localProduct.id}/`, { cache: 'no-store' })
+          if (res.ok) {
+            const fresh = await res.json()
+            setLocalProduct(fresh)
+          }
+        }
+      } catch (err) {
+        // ignore network errors
+      }
+    }
+
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [localProduct.id])
 
   const handleAddToCart = () => {
     if (!selectedVariant) {
@@ -60,10 +109,10 @@ export function ProductDetails({ product }: ProductDetailsProps) {
       return
     }
 
-    addItem(product, 1, selectedVariant.id)
+    addItem(localProduct, 1, selectedVariant.id)
     toast({
       title: "Added to cart",
-      description: `${product.name} (${selectedStorage} - ${selectedColor}) has been added to your cart.`,
+      description: `${localProduct.name} (${selectedStorage} - ${selectedColor}) has been added to your cart.`,
     })
   }
 
@@ -88,9 +137,9 @@ export function ProductDetails({ product }: ProductDetailsProps) {
               className="object-cover"
               priority
             />
-            {currentOriginalPrice && (
+            {currentOriginalPrice && (Number(currentOriginalPrice) - Number(currentPrice)) > 0 && (
               <Badge className="absolute left-4 top-4 bg-destructive text-lg px-3 py-1">
-                Save ${currentOriginalPrice - currentPrice}
+                Save ${Number(currentOriginalPrice) - Number(currentPrice)}
               </Badge>
             )}
           </div>

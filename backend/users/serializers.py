@@ -19,15 +19,23 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class SendOTPSerializer(serializers.Serializer):
-    """Serializer for sending OTP"""
-    email = serializers.EmailField(required=True)
+    """Serializer for sending OTP. Accepts either email or phone (one required)."""
+    email = serializers.EmailField(required=False, allow_null=True)
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     purpose = serializers.ChoiceField(choices=['login', 'register'], default='login')
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        phone = attrs.get('phone')
+        if not email and not phone:
+            raise serializers.ValidationError('Either email or phone is required.')
+        return attrs
 
 
 class OTPVerificationSerializer(serializers.Serializer):
     """Serializer for OTP verification"""
     email = serializers.EmailField(required=True)
-    otp_code = serializers.CharField(required=True, max_length=6, min_length=6)
+    otp = serializers.CharField(required=True, max_length=6, min_length=6)
 
 
 class UserRegistrationSerializer(serializers.Serializer):
@@ -43,7 +51,7 @@ class UserRegistrationSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
     last_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
     phone_number = serializers.CharField(required=False, max_length=15, allow_blank=True)
-    otp_code = serializers.CharField(required=True, max_length=6, min_length=6)
+    otp = serializers.CharField(required=True, max_length=6, min_length=6)
     
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -56,7 +64,7 @@ class UserRegistrationSerializer(serializers.Serializer):
         return value
     
     def create(self, validated_data):
-        otp_code = validated_data.pop('otp_code')
+        otp_code = validated_data.pop('otp')
         password = validated_data.pop('password')
         
         # Create user with USER role by default

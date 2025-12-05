@@ -21,7 +21,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const lowestPrice = getLowestPrice(product)
   const inStock = hasStock(product)
-  const lowestPriceVariant = product.variants.find((v) => v.price === lowestPrice)
+  const lowestPriceVariant = (product.variants ?? []).find((v) => v.price === lowestPrice)
   const storages = getAvailableStorages(product)
   const showStorageInfo = product.category === "Smartphones" || product.category === "Laptops"
 
@@ -35,9 +35,9 @@ export function ProductCard({ product }: ProductCardProps) {
             fill
             className="object-cover transition-transform group-hover:scale-105"
           />
-          {lowestPriceVariant?.originalPrice && (
+          {lowestPriceVariant?.originalPrice && (Number(lowestPriceVariant.originalPrice) - Number(lowestPrice)) > 0 && (
             <Badge className="absolute left-3 top-3 bg-destructive">
-              Save ${lowestPriceVariant.originalPrice - lowestPrice}
+              Save ${Number(lowestPriceVariant.originalPrice) - Number(lowestPrice)}
             </Badge>
           )}
           {!inStock && <Badge className="absolute left-3 top-3 bg-muted-foreground">Out of Stock</Badge>}
@@ -56,9 +56,18 @@ export function ProductCard({ product }: ProductCardProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8 flex-shrink-0"
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-pressed={isFavorite}
             onClick={(e) => {
               e.preventDefault()
+              e.stopPropagation()
               toggleFavorite(product.id)
+              // blur the button to remove focus outline when clicked
+              try {
+                ;(e.currentTarget as HTMLButtonElement).blur()
+              } catch {
+                /* ignore */
+              }
             }}
           >
             <Heart className={cn("h-4 w-4", isFavorite && "fill-destructive text-destructive")} />

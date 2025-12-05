@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Legend } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { DollarSign, ShoppingCart, TrendingUp, Package } from "lucide-react"
 import { useOrders } from "@/hooks/use-orders"
+import { useAuth } from "@/contexts/auth-context"
 import {
   format,
   subDays,
@@ -22,7 +23,13 @@ import {
 
 export function SalesReports() {
   const [period, setPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily")
-  const { orders } = useOrders()
+  const { orders, fetchOrders } = useOrders()
+  const { token } = useAuth()
+
+  useEffect(() => {
+    // fetch orders when component mounts or token changes
+    fetchOrders(token ?? undefined).catch((e) => console.error('Failed to load orders for reports', e))
+  }, [token, fetchOrders])
 
   const reportData = useMemo(() => {
     const now = new Date()
@@ -129,10 +136,10 @@ export function SalesReports() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
+        {/* <div>
           <h2 className="text-2xl font-bold">Sales Reports</h2>
           <p className="text-sm text-muted-foreground">Real-time sales performance from actual orders</p>
-        </div>
+        </div> */}
         <Select value={period} onValueChange={(value: any) => setPeriod(value)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue />
@@ -146,7 +153,7 @@ export function SalesReports() {
         </Select>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
@@ -190,7 +197,7 @@ export function SalesReports() {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Avg Order Value</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -199,7 +206,7 @@ export function SalesReports() {
             <div className="text-2xl font-bold">${avgOrderValue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">Per order</p>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       <Card>
@@ -210,10 +217,8 @@ export function SalesReports() {
         <CardContent>
           <ChartContainer
             config={{
-              sales: {
-                label: "Sales",
-                color: "hsl(var(--chart-1))",
-              },
+              sales: { label: "Sales", color: "#06b6d4" },
+              orders: { label: "Orders", color: "#f97316" },
             }}
             className="h-[400px]"
           >
@@ -221,10 +226,30 @@ export function SalesReports() {
               <LineChart data={reportData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey={getXAxisKey()} />
-                <YAxis />
+                {/* Left axis: sales (currency) */}
+                <YAxis yAxisId="left" />
+                {/* Right axis: orders (count) */}
+                <YAxis yAxisId="right" orientation="right" />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend />
-                <Line type="monotone" dataKey="sales" stroke="var(--color-sales)" strokeWidth={2} name="Sales ($)" />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="sales"
+                  stroke="var(--color-sales)"
+                  strokeWidth={2}
+                  name="Sales ($)"
+                  dot={{ r: 3 }}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="orders"
+                  stroke="var(--color-orders)"
+                  strokeWidth={2}
+                  name="Orders"
+                  dot={{ r: 3 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </ChartContainer>
@@ -239,14 +264,8 @@ export function SalesReports() {
         <CardContent>
           <ChartContainer
             config={{
-              orders: {
-                label: "Orders",
-                color: "hsl(var(--chart-2))",
-              },
-              items: {
-                label: "Items",
-                color: "hsl(var(--chart-3))",
-              },
+              orders: { label: "Orders", color: "#f97316" },
+              items: { label: "Items", color: "#10b981" },
             }}
             className="h-[400px]"
           >

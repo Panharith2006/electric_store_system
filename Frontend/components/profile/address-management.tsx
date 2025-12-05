@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useAuth } from "@/contexts/auth-context"
+import apiClient from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MapPin, Plus, Pencil, Trash2 } from "lucide-react"
@@ -17,32 +19,65 @@ interface Address {
 }
 
 export function AddressManagement() {
-  const [addresses, setAddresses] = useState<Address[]>([
-    {
-      id: "1",
-      type: "home",
-      street: "123 Main Street",
-      city: "New York",
-      state: "NY",
-      zipCode: "10001",
-      isDefault: true,
-    },
-    {
-      id: "2",
-      type: "work",
-      street: "456 Business Ave",
-      city: "New York",
-      state: "NY",
-      zipCode: "10002",
-      isDefault: false,
-    },
-  ])
+  const [mounted, setMounted] = useState(false)
+  const [addresses, setAddresses] = useState<Address[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAddress, setEditingAddress] = useState<Address | null>(null)
+  const { token } = useAuth()
 
-  const handleDelete = (id: string) => {
-    setAddresses(addresses.filter((addr) => addr.id !== id))
-    console.log("[v0] Deleted address:", id)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    const loadAddresses = async () => {
+      if (!token) return
+      try {
+        const res = await apiClient.getProfile(token)
+        if (res.data) {
+          const profile: any = res.data
+          // User model has single address fields, so map them to a single address
+          const hasAddress = profile.address_line1 || profile.city || profile.state || profile.postal_code
+          if (hasAddress) {
+            const primaryAddress: Address = {
+              id: 'primary',
+              type: 'home',
+              street: `${profile.address_line1 || ''}${profile.address_line2 ? ' ' + profile.address_line2 : ''}`.trim(),
+              city: profile.city || '',
+              state: profile.state || '',
+              zipCode: profile.postal_code || '',
+              // Do not assume the address is "Default"; preserve explicit flag from backend when available
+              isDefault: Boolean(profile.is_default) || false,
+            }
+            setAddresses([primaryAddress])
+          } else {
+            setAddresses([])
+          }
+        }
+      } catch (err) {
+        // ignore network errors in this component; start empty
+        console.error('Failed to load addresses', err)
+      }
+    }
+    loadAddresses()
+  }, [token])
+
+  const handleDelete = async (id: string) => {
+    if (!token) return
+    try {
+      // Clear address fields in backend
+      await apiClient.updateProfile(token, {
+        address_line1: '',
+        address_line2: '',
+        city: '',
+        state: '',
+        postal_code: '',
+      })
+      setAddresses(addresses.filter((addr) => addr.id !== id))
+      console.log("[AddressManagement] Deleted address:", id)
+    } catch (err) {
+      console.error('Failed to delete address', err)
+    }
   }
 
   const handleEdit = (address: Address) => {
@@ -55,18 +90,47 @@ export function AddressManagement() {
     setDialogOpen(true)
   }
 
-  const handleSaveAddress = (address: Address) => {
-    if (editingAddress) {
-      // Update existing address
-      setAddresses(addresses.map((addr) => (addr.id === address.id ? address : addr)))
-      console.log("[v0] Updated address:", address)
-    } else {
-      // Add new address
-      setAddresses([...addresses, address])
-      console.log("[v0] Added new address:", address)
+  const handleSaveAddress = async (address: Address) => {
+    if (!token) return
+    try {
+      // Split street into address_line1 and address_line2 if needed
+      const streetParts = address.street.split(',').map(s => s.trim())
+      const address_line1 = streetParts[0] || ''
+      const address_line2 = streetParts.length > 1 ? streetParts.slice(1).join(', ') : ''
+
+      // Save to backend User model address fields
+      const res = await apiClient.updateProfile(token, {
+        address_line1,
+        address_line2,
+        city: address.city,
+        state: address.state,
+        postal_code: address.zipCode,
+      })
+
+      if (res.error) {
+        console.error('Failed to save address:', res.error)
+        return
+      }
+
+      // Update local state
+      const savedAddress = { ...address, id: 'primary', isDefault: Boolean(address.isDefault) }
+      if (editingAddress) {
+        setAddresses(addresses.map((addr) => (addr.id === address.id ? savedAddress : addr)))
+        console.log("[AddressManagement] Updated address:", savedAddress)
+      } else {
+        // Replace any existing address (we only support one primary address)
+        setAddresses([savedAddress])
+        console.log("[AddressManagement] Added new address:", savedAddress)
+      }
+      setDialogOpen(false)
+      setEditingAddress(null)
+    } catch (err) {
+      console.error('Failed to save address', err)
     }
-    setDialogOpen(false)
-    setEditingAddress(null)
+  }
+
+  if (!mounted) {
+    return null
   }
 
   return (
@@ -75,12 +139,12 @@ export function AddressManagement() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-card-foreground">Saved Addresses</CardTitle>
-              <CardDescription>Manage your delivery addresses</CardDescription>
+              <CardTitle className="text-card-foreground">Primary Address</CardTitle>
+              <CardDescription>Manage your primary delivery address</CardDescription>
             </div>
             <Button onClick={handleAddNew} className="gap-2">
               <Plus className="h-4 w-4" />
-              Add Address
+              {addresses.length > 0 ? 'Edit Address' : 'Add Address'}
             </Button>
           </div>
         </CardHeader>
@@ -97,11 +161,6 @@ export function AddressManagement() {
                 <div>
                   <div className="mb-1 flex items-center gap-2">
                     <span className="font-semibold capitalize text-foreground">{address.type}</span>
-                    {address.isDefault && (
-                      <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                        Default
-                      </span>
-                    )}
                   </div>
                   <p className="text-sm text-foreground">{address.street}</p>
                   <p className="text-sm text-muted-foreground">
@@ -113,12 +172,7 @@ export function AddressManagement() {
                 <Button variant="ghost" size="icon" onClick={() => handleEdit(address)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDelete(address.id)}
-                  disabled={address.isDefault}
-                >
+                <Button variant="ghost" size="icon" onClick={() => handleDelete(address.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>

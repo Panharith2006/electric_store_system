@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CreditCard, Plus, Trash2 } from "lucide-react"
@@ -16,6 +16,7 @@ interface PaymentMethod {
 }
 
 export function PaymentMethods() {
+  const [mounted, setMounted] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
     {
       id: "1",
@@ -37,9 +38,17 @@ export function PaymentMethods() {
     },
   ])
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const handleDelete = (id: string) => {
     setPaymentMethods(paymentMethods.filter((pm) => pm.id !== id))
     console.log("[v0] Deleted payment method:", id)
+  }
+
+  if (!mounted) {
+    return null
   }
 
   return (

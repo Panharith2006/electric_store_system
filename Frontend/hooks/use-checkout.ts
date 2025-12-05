@@ -31,15 +31,14 @@ export function useCheckout() {
     },
   ) => {
     const orderItems: OrderItem[] = items.map((item) => {
-      const variant =
-        item.variantId && item.product.variants ? item.product.variants.find((v) => v.id === item.variantId) : null
+      const variant = item.variantId ? (item.product.variants ?? []).find((v) => v.id === item.variantId) : null
 
       return {
         productId: item.product.id,
         productName: item.product.name,
         productImage: item.product.image || "/placeholder.svg",
         quantity: item.quantity,
-        price: variant?.price || item.product.price,
+        price: variant?.effective_price ?? variant?.price ?? item.product.price,
         variant: variant?.name, // Store variant name for order history
       }
     })

@@ -115,6 +115,47 @@ class ProductVariant(models.Model):
         return self.price
 
 
+class PricingRule(models.Model):
+    """Pricing rules for bulk discounts, promotions, and bundles"""
+    
+    class RuleType(models.TextChoices):
+        PERCENTAGE_DISCOUNT = 'PERCENTAGE', 'Percentage Discount'
+        FIXED_DISCOUNT = 'FIXED', 'Fixed Amount Discount'
+        BULK_PRICING = 'BULK', 'Bulk/Volume Pricing'
+        BUNDLE = 'BUNDLE', 'Bundle Deal'
+        
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    rule_type = models.CharField(max_length=20, choices=RuleType.choices)
+    
+    # Applicable products (null = all products)
+    products = models.ManyToManyField('Product', blank=True, related_name='pricing_rules')
+    categories = models.ManyToManyField('Category', blank=True, related_name='pricing_rules')
+    
+    # Rule parameters (stored as JSON for flexibility)
+    # Example for BULK: {"tiers": [{"min_qty": 10, "discount_pct": 20}, {"min_qty": 20, "discount_pct": 30}]}
+    # Example for PERCENTAGE: {"discount_pct": 15}
+    # Example for FIXED: {"discount_amount": 50}
+    parameters = models.JSONField(default=dict)
+    
+    # Time constraints
+    start_date = models.DateTimeField(null=True, blank=True)
+    end_date = models.DateTimeField(null=True, blank=True)
+    
+    # Priority (higher number = higher priority)
+    priority = models.IntegerField(default=0)
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-priority', '-created_at']
+    
+    def __str__(self):
+        return self.name
+
+
 class Promotion(models.Model):
     """Promotional pricing and discounts"""
     

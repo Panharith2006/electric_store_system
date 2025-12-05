@@ -7,47 +7,98 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Smartphone, Lock } from "lucide-react"
+import { Smartphone, Lock, AlertCircle } from "lucide-react"
 import { OtpVerification } from "./otp-verification"
+import apiClient from "@/lib/api-client"
+import { useAuth } from "@/contexts/auth-context"
+import { useRouter, useSearchParams } from "next/navigation"
 
 export function LoginForm() {
-  const [step, setStep] = useState<"phone" | "otp">("phone")
-  const [phoneNumber, setPhoneNumber] = useState("")
+  const [step, setStep] = useState<"email" | "otp">("email")
+  const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [devOtp, setDevOtp] = useState<string | null>(null)
+  const { login } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    try {
+      const response = await apiClient.sendOTP({ email, purpose: 'login' })
+      if (response.error) {
+        setError(response.error)
+        return
+      }
 
-    setLoading(false)
-    setStep("otp")
+      if (response.data && (response.data as any).otp_code) {
+        setDevOtp((response.data as any).otp_code)
+      }
+
+      setStep("otp")
+    } catch (err: any) {
+      setError(err.message || 'Failed to send OTP')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleVerifyOtp = async (otp: string) => {
     setLoading(true)
+    setError(null)
 
-    // Simulate OTP verification
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const response = await login(email, otp)
 
-    console.log("[v0] Login successful with OTP:", otp)
+    if (response?.error || !response?.data) {
+      const raw = String(response?.error || '')
+      const lower = raw.toLowerCase()
+      if (lower.includes('otp') || lower.includes('invalid') || lower.includes('verification')) {
+        setError('Invalid verification code. Please check the code and try again.')
+      } else {
+        setError('Login failed. Please try again.')
+      }
+      setLoading(false)
+      return
+    }
+
+    // success
+    const next = searchParams.get('next')
+    router.push(next || '/products')
     setLoading(false)
-
-    // Redirect to profile or dashboard
-    window.location.href = "/profile"
   }
 
   if (step === "otp") {
+    const resendOtp = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await apiClient.sendOTP({ email, purpose: 'login' })
+        if (res?.error) {
+          setError(res.error)
+        }
+        if (res?.data && (res.data as any).otp_code) {
+          setDevOtp((res.data as any).otp_code)
+        }
+        // stay on OTP step — user will receive a new code
+      } catch (err: any) {
+        setError(err?.message || 'Failed to resend OTP')
+      } finally {
+        setLoading(false)
+      }
+    }
+
     return (
       <OtpVerification
-        phoneNumber={phoneNumber}
+        contact={email}
+        contactType="email"
+        purpose="login"
         onVerify={handleVerifyOtp}
-        onResend={() => {
-          console.log("[v0] Resending OTP")
-          setStep("phone")
-        }}
+        onResend={resendOtp}
+        serverError={error}
         loading={loading}
       />
     )
@@ -57,30 +108,42 @@ export function LoginForm() {
     <Card className="border-border bg-card">
       <CardHeader>
         <CardTitle className="text-card-foreground">Sign In</CardTitle>
-        <CardDescription>Enter your phone number to receive a verification code</CardDescription>
+        <CardDescription>Enter your email to receive a verification code</CardDescription>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            <p>{error}</p>
+          </div>
+        )}
+        {devOtp && (
+          <div className="mb-4 rounded-lg bg-accent/10 p-3 text-sm text-accent-foreground">
+            <p className="font-medium">Dev OTP (debug): <span className="font-mono">{devOtp}</span></p>
+            <p className="text-xs text-muted-foreground">This appears only in development (DEBUG=True).</p>
+          </div>
+        )}
         <form onSubmit={handleSendOtp} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="phone" className="text-card-foreground">
-              Phone Number
+            <Label htmlFor="email" className="text-card-foreground">
+              Email Address
             </Label>
             <div className="relative">
               <Smartphone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                id="phone"
-                type="tel"
-                placeholder="+1 (555) 000-0000"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                id="email"
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="pl-10 bg-background text-foreground"
                 required
               />
             </div>
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading || !phoneNumber}>
-            {loading ? "Sending Code..." : "Continue with Phone"}
+          <Button type="submit" className="w-full" disabled={loading || !email}>
+            {loading ? "Sending Code..." : "Continue with Email"}
           </Button>
 
           <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-3">

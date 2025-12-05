@@ -1,6 +1,6 @@
 "use client"
 
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,7 @@ interface PaymentFormProps {
 export function PaymentForm({ onSubmit, onBack }: PaymentFormProps) {
   const {
     register,
+    control,
     handleSubmit,
     watch,
     formState: { errors },
@@ -77,26 +78,44 @@ export function PaymentForm({ onSubmit, onBack }: PaymentFormProps) {
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cardNumber">Card Number</Label>
-            <Input id="cardNumber" {...register("cardNumber")} placeholder="1234 5678 9012 3456" maxLength={16} />
+            <Controller
+              control={control}
+              name="cardNumber"
+              render={({ field }) => (
+                <Input id="cardNumber" {...field} placeholder="1234 5678 9012 3456" maxLength={16} />
+              )}
+            />
             {errors.cardNumber && <p className="text-xs text-destructive">{errors.cardNumber.message}</p>}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="cardName">Cardholder Name</Label>
-            <Input id="cardName" {...register("cardName")} placeholder="John Doe" />
+            <Controller
+              control={control}
+              name="cardName"
+              render={({ field }) => <Input id="cardName" {...field} placeholder="John Doe" />}
+            />
             {errors.cardName && <p className="text-xs text-destructive">{errors.cardName.message}</p>}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="expiryDate">Expiry Date</Label>
-              <Input id="expiryDate" {...register("expiryDate")} placeholder="MM/YY" maxLength={5} />
+              <Controller
+                control={control}
+                name="expiryDate"
+                render={({ field }) => <Input id="expiryDate" {...field} placeholder="MM/YY" maxLength={5} />}
+              />
               {errors.expiryDate && <p className="text-xs text-destructive">{errors.expiryDate.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="cvv">CVV</Label>
-              <Input id="cvv" {...register("cvv")} placeholder="123" maxLength={4} />
+              <Controller
+                control={control}
+                name="cvv"
+                render={({ field }) => <Input id="cvv" {...field} placeholder="123" maxLength={4} />}
+              />
               {errors.cvv && <p className="text-xs text-destructive">{errors.cvv.message}</p>}
             </div>
           </div>

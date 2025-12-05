@@ -14,7 +14,7 @@ export function ReportsPage() {
       <Tabs defaultValue="sales" className="space-y-6">
         <TabsList>
           <TabsTrigger value="sales">Sales Reports</TabsTrigger>
-          <TabsTrigger value="branch">Branch Reports</TabsTrigger>
+          {/* <TabsTrigger value="branch">Branch Reports</TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="sales" className="space-y-6">

@@ -4,3 +4,21 @@ djangorestframework>=3.16.0
 django-filter>=25.2
 django-cors-headers>=4.9.0
 pymysql
+python-dotenv
+gunicorn
+whitenoise
+pillow
+
+# Payment processing
+stripe>=7.0.0
+
+# Optional: PayPal SDK (uncomment when ready to implement)
+# paypalrestsdk>=1.13.1
+
+# Email & notifications (optional - uncomment when ready)
+# django-anymail>=10.2
+# twilio>=8.10.0
+
+# Background tasks (optional - for stock alerts, reporting)
+# celery>=5.3.0
+# redis>=5.0.0

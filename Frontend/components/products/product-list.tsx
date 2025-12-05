@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useAuth } from "@/contexts/auth-context"
 import { useSearchParams } from "next/navigation"
-import { products as localProducts, categories as localCategories, brands as localBrands, hasStock } from "@/lib/products-data"
+import { hasStock } from "@/lib/products-data"
 import { ProductCard } from "./product-card"
 import { ProductFilters } from "./product-filters"
 import { PromotionalSlider } from "./promotional-slider"
@@ -17,41 +18,52 @@ export function ProductList() {
   const [priceRange, setPriceRange] = useState([0, 5000])
   const [sortBy, setSortBy] = useState("featured")
   const [showInStockOnly, setShowInStockOnly] = useState(false)
-
-  useEffect(() => {
-    const category = searchParams.get("category")
-    if (category && categories.includes(category)) {
-      setSelectedCategory(category)
-    } else if (!category) {
-      setSelectedCategory("All Categories")
-    }
-  }, [searchParams])
-
   const [fetchedProducts, setFetchedProducts] = useState<any[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
-
-  // API base (frontend env var or default)
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
-
+  const [apiStatus, setApiStatus] = useState<{ ok: boolean; count?: number; lastChecked?: string } | null>(null)
+  const { isAuthenticated } = useAuth()
+  const [mounted, setMounted] = useState(false)
   const [categoriesList, setCategoriesList] = useState<string[] | null>(null)
   const [brandsList, setBrandsList] = useState<string[] | null>(null)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // API base (frontend env var or default)
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+
+  useEffect(() => {
+    const category = searchParams.get("category")
+    if (category && categoriesList && categoriesList.includes(category)) {
+      setSelectedCategory(category)
+    } else if (!category) {
+      setSelectedCategory("All Categories")
+    }
+  }, [searchParams, categoriesList])
+
+  // Listen for cross-tab product updates (admin CRUD) and trigger a refetch
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'products_updated_at') {
+        setRefreshTick((t) => t + 1)
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // Fetch categories and brands once on mount
+  useEffect(() => {
     let cancelled = false
-    const fetchAll = async () => {
-      setLoading(true)
-      setError(null)
+    const fetchMetadata = async () => {
       try {
-        // products list (lightweight)
-        const [pRes, cRes, bRes] = await Promise.all([
-          fetch(`${API_BASE}/products/products/`),
+        const [cRes, bRes] = await Promise.all([
           fetch(`${API_BASE}/products/products/categories/`),
           fetch(`${API_BASE}/products/products/brands/`),
         ])
-
-        if (!pRes.ok) throw new Error(`Failed to fetch products: ${pRes.status}`)
-        const pData = await pRes.json()
 
         if (cRes.ok) {
           const cData = await cRes.json()
@@ -61,21 +73,99 @@ export function ProductList() {
           const bData = await bRes.json()
           if (!cancelled) setBrandsList(["All Brands", ...bData.map((b: any) => b.name)])
         }
+      } catch (err: any) {
+        console.warn("Failed to fetch categories/brands:", err)
+      }
+    }
 
-        if (!cancelled) setFetchedProducts(pData)
+    fetchMetadata()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Fetch products with filters applied
+  useEffect(() => {
+    let cancelled = false
+    const fetchProducts = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        // Build query parameters for backend filtering
+        const params = new URLSearchParams()
+        
+        // Search query
+        const searchQuery = searchParams.get("search")
+        if (searchQuery) {
+          params.append("search", searchQuery)
+        }
+        
+        // Category filter (use category ID from backend)
+        if (selectedCategory !== "All Categories") {
+          // We need to find category ID - for now use name
+          params.append("category__name", selectedCategory)
+        }
+        
+        // Brand filter
+        if (selectedBrand !== "All Brands") {
+          params.append("brand__name", selectedBrand)
+        }
+        
+        // Price range filter
+        if (priceRange[0] > 0) {
+          params.append("min_price", priceRange[0].toString())
+        }
+        if (priceRange[1] < 5000) {
+          params.append("max_price", priceRange[1].toString())
+        }
+        
+        // Sorting
+        if (sortBy === "price-low") {
+          params.append("ordering", "base_price")
+        } else if (sortBy === "price-high") {
+          params.append("ordering", "-base_price")
+        } else if (sortBy === "name") {
+          params.append("ordering", "name")
+        }
+        
+        const url = `${API_BASE}/products/products/?${params.toString()}`
+        const response = await fetch(url)
+
+        if (!response.ok) {
+          // Record API status and throw for fallback
+          if (!cancelled) setApiStatus({ ok: false, lastChecked: new Date().toISOString() })
+          throw new Error(`Failed to fetch products: ${response.status}`)
+        }
+
+        const data = await response.json()
+
+        // Update API status with count when possible
+        const count = (data && (data.count ?? (Array.isArray(data) ? data.length : undefined))) || 0
+        if (!cancelled) setApiStatus({ ok: true, count, lastChecked: new Date().toISOString() })
+
+        if (!cancelled) setFetchedProducts(data)
       } catch (err: any) {
         console.warn("Products fetch failed, falling back to local data:", err)
-        if (!cancelled) setError(err.message || "Failed to fetch")
+        if (!cancelled) {
+          setError(err.message || "Failed to fetch")
+          setFetchedProducts(null) // Fall back to local data
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    fetchAll()
+    fetchProducts()
+
+    // Poll for updates every 30s so admin changes appear for users
+    const interval = setInterval(() => {
+      fetchProducts()
+    }, 30_000)
     return () => {
       cancelled = true
+      clearInterval(interval)
     }
-  }, [])
+  }, [selectedCategory, selectedBrand, priceRange, sortBy, searchParams, refreshTick])
 
   // Normalize backend product shape to frontend shape when fetched
   const normalize = (item: any) => {
@@ -103,49 +193,30 @@ export function ProductList() {
     }
   }
 
-  const productSource = (fetchedProducts ? fetchedProducts.map(normalize) : localProducts) as any[]
-
-  const filteredProducts = useMemo(() => {
-    const searchQuery = searchParams.get("search")?.toLowerCase() || ""
-
-    const filtered = productSource.filter((product: any) => {
-      const categoryMatch = selectedCategory === "All Categories" || product.category === selectedCategory
-      const brandMatch = selectedBrand === "All Brands" || product.brand === selectedBrand
-      const priceMatch = product.basePrice >= priceRange[0] && product.basePrice <= priceRange[1]
-      const stockMatch = !showInStockOnly || hasStock(product)
-
-      const searchMatch =
-        !searchQuery ||
-        product.name.toLowerCase().includes(searchQuery) ||
-        product.brand.toLowerCase().includes(searchQuery) ||
-        product.category.toLowerCase().includes(searchQuery) ||
-        product.description.toLowerCase().includes(searchQuery)
-
-      return categoryMatch && brandMatch && priceMatch && stockMatch && searchMatch
-    })
-
-    // Sort products
-    switch (sortBy) {
-      case "price-low":
-        filtered.sort((a, b) => a.basePrice - b.basePrice)
-        break
-      case "price-high":
-        filtered.sort((a, b) => b.basePrice - a.basePrice)
-        break
-      case "name":
-        filtered.sort((a, b) => a.name.localeCompare(b.name))
-        break
-      default:
-        // featured - keep original order
-        break
+  // Handle paginated responses from DRF ( { count, next, previous, results: [...] } )
+  const productSource = useMemo(() => {
+    if (!fetchedProducts) return []
+    if (Array.isArray(fetchedProducts)) return fetchedProducts.map(normalize)
+    if ((fetchedProducts as any).results && Array.isArray((fetchedProducts as any).results)) {
+      return (fetchedProducts as any).results.map(normalize)
     }
+    // If API returned an object with data property
+    if ((fetchedProducts as any).data && Array.isArray((fetchedProducts as any).data)) {
+      return (fetchedProducts as any).data.map(normalize)
+    }
+    return []
+  }, [fetchedProducts])
 
-    return filtered
-  }, [selectedCategory, selectedBrand, priceRange, sortBy, showInStockOnly, searchParams])
+  // Apply client-side stock filter only (backend handles other filters)
+  const filteredProducts = useMemo(() => {
+    if (!showInStockOnly) return productSource
+    
+    return productSource.filter((product: any) => hasStock(product))
+  }, [productSource, showInStockOnly])
 
   const filterProps = {
-    categories: categoriesList ?? localCategories,
-    brands: brandsList ?? localBrands,
+    categories: categoriesList ?? ["All Categories"],
+    brands: brandsList ?? ["All Brands"],
     selectedCategory,
     setSelectedCategory,
     selectedBrand,
@@ -158,8 +229,47 @@ export function ProductList() {
     setShowInStockOnly,
   }
 
+  // Don't show anything until mounted to avoid hydration issues
+  if (!mounted) {
+    return null
+  }
+
+  // If not authenticated, show sign-in prompt
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center py-12">
+          <p className="mb-4 text-xl font-semibold text-foreground">Please sign in to view products</p>
+          <p className="text-muted-foreground mb-6">Products are available to signed-in customers. Admins manage inventory from the Admin Panel.</p>
+          <div className="flex justify-center gap-3">
+            <a href="/login" className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white">Sign in</a>
+            <a href="/register" className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium">Create account</a>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* API status banner for debugging and realtime visibility */}
+      {apiStatus && (
+        <div className={`mb-4 rounded-md p-2 text-sm ${apiStatus.ok ? 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400' : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-400'}`}>
+          {/* Visually hide the full message, expose a small status dot for customers, keep message for screen readers */}
+          {apiStatus.ok ? (
+            <div className="flex items-center gap-2">
+              {/* <span className="inline-block h-2 w-2 rounded-full bg-green-600" aria-hidden="true" /> */}
+              {/* <span className="sr-only">✓ Backend connected — {apiStatus.count ?? 0} products available (last checked: {new Date(apiStatus.lastChecked || '').toLocaleTimeString()})</span> */}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              {/* <span className="inline-block h-2 w-2 rounded-full bg-red-600" aria-hidden="true" /> */}
+              {/* <span className="sr-only">⚠ Backend unreachable — check if Django server is running at {API_BASE}</span> */}
+            </div>
+          )}
+        </div>
+      )}
+
       <PromotionalSlider />
 
       <div className="mb-6 flex items-center justify-between">
@@ -218,7 +328,7 @@ export function ProductList() {
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredProducts.map((product) => (
+              {filteredProducts.map((product: any) => (
                 <ProductCard key={product.id} product={product} />
               ))}
             </div>

@@ -1,19 +1,21 @@
+"use client"
+
 import Image from "next/image"
+import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import type { CartItem } from "@/hooks/use-cart"
+import { useCart } from "@/hooks/use-cart"
 
-interface OrderSummaryProps {
-  items: CartItem[]
-  subtotal: number
-  shipping: number
-  tax: number
-  total: number
-}
+export function OrderSummary() {
+  // Use client-side cart to compute totals to avoid SSR/client mismatch
+  const { items, getTotalPrice } = useCart()
 
-export function OrderSummary({ items, subtotal, shipping, tax, total }: OrderSummaryProps) {
+  const subtotal = useMemo(() => getTotalPrice(), [getTotalPrice, items])
+  const shipping = useMemo(() => (subtotal >= 1000 ? 0 : 29.99), [subtotal])
+  const tax = useMemo(() => subtotal * 0.08, [subtotal])
+  const total = useMemo(() => subtotal + shipping + tax, [subtotal, shipping, tax])
   return (
     <Card className="sticky top-24">
       <CardHeader>
@@ -23,10 +25,10 @@ export function OrderSummary({ items, subtotal, shipping, tax, total }: OrderSum
         <ScrollArea className="max-h-64">
           <div className="space-y-3">
             {items.map((item) => (
-              <div key={`${item.product.id}-${item.variantId || "default"}`} className="flex gap-3">
+              <div key={`${item.product.id}-${(item.selectedVariant && item.selectedVariant.id) || "default"}`} className="flex gap-3">
                 <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
                   <Image
-                    src={item.product.image || "/placeholder.svg"}
+                    src={(item.selectedVariant && item.selectedVariant.image) || item.product.image || "/placeholder.svg"}
                     alt={item.product.name}
                     fill
                     className="object-cover"
@@ -34,19 +36,14 @@ export function OrderSummary({ items, subtotal, shipping, tax, total }: OrderSum
                 </div>
                 <div className="flex-1 space-y-1">
                   <p className="text-sm font-medium text-foreground line-clamp-1">{item.product.name}</p>
-                  {item.variantId && item.product.variants && (
+                  {item.selectedVariant && (
                     <Badge variant="secondary" className="text-xs">
-                      {item.product.variants.find((v) => v.id === item.variantId)?.name}
+                      {item.selectedVariant.storage ? `${item.selectedVariant.storage} ${item.selectedVariant.color}`.trim() : item.selectedVariant.id}
                     </Badge>
                   )}
                   <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
                   <p className="text-sm font-semibold text-foreground">
-                    $
-                    {(
-                      (item.variantId && item.product.variants
-                        ? item.product.variants.find((v) => v.id === item.variantId)?.price || item.product.price
-                        : item.product.price) * item.quantity
-                    ).toFixed(2)}
+                    {(Number(item.selectedVariant?.price ?? item.product.price) * item.quantity).toFixed(2)}
                   </p>
                 </div>
               </div>

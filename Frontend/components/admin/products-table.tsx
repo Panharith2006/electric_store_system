@@ -4,6 +4,7 @@ import { useState } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   AlertDialog,
@@ -18,6 +19,7 @@ import {
 import { Edit, Trash2 } from "lucide-react"
 import { useProducts, type Product } from "@/hooks/use-products"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/auth-context"
 
 interface ProductsTableProps {
   products: Product[]
@@ -28,10 +30,11 @@ export function ProductsTable({ products, onEdit }: ProductsTableProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const { deleteProduct } = useProducts()
   const { toast } = useToast()
+  const { token } = useAuth()
 
   const handleDelete = () => {
-    if (deleteId) {
-      deleteProduct(deleteId)
+    if (deleteId && token) {
+      deleteProduct(deleteId, token)
       toast({
         title: "Product deleted",
         description: "The product has been removed from your catalog",
@@ -41,7 +44,7 @@ export function ProductsTable({ products, onEdit }: ProductsTableProps) {
   }
 
   const hasStock = (product: Product) => {
-    return product.variants.some((v) => v.stock > 0)
+    return (product.variants ?? []).some((v) => v.stock > 0)
   }
 
   return (
@@ -82,17 +85,21 @@ export function ProductsTable({ products, onEdit }: ProductsTableProps) {
                   </TableCell>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{product.category}</Badge>
+                    <Link aria-label={`View category ${product.category}`} href={`/admin/categories?name=${encodeURIComponent(
+                      product.category || "",
+                    )}`}>
+                      <Badge variant="outline">{product.category}</Badge>
+                    </Link>
                   </TableCell>
                   <TableCell>{product.brand}</TableCell>
                   <TableCell>
-                    {product.variants.length > 1 ? (
+                    {((product.variants ?? []).length > 1) ? (
                       <span className="text-sm">
-                        ${Math.min(...product.variants.map((v) => v.price)).toFixed(2)} - $
-                        {Math.max(...product.variants.map((v) => v.price)).toFixed(2)}
+                        ${Math.min(...(product.variants ?? []).map((v) => Number(v?.price ?? 0))).toFixed(2)} - $
+                        {Math.max(...(product.variants ?? []).map((v) => Number(v?.price ?? 0))).toFixed(2)}
                       </span>
                     ) : (
-                      <span>${product.basePrice.toFixed(2)}</span>
+                      <span>${Number(product.basePrice ?? 0).toFixed(2)}</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -100,7 +107,7 @@ export function ProductsTable({ products, onEdit }: ProductsTableProps) {
                       {hasStock(product) ? "In Stock" : "Out of Stock"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{product.variants ? product.variants.length : 0}</TableCell>
+                  <TableCell>{(product.variants ?? []).length}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => onEdit(product.id)}>

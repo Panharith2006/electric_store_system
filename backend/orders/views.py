@@ -188,6 +188,96 @@ class OrderViewSet(viewsets.ModelViewSet):
             'completed_orders': orders.filter(status=Order.OrderStatus.DELIVERED).count(),
             'total_spent': sum(o.total for o in orders.filter(status=Order.OrderStatus.DELIVERED)),
         })
+    
+    @action(detail=True, methods=['post'])
+    def create_payment_intent(self, request, pk=None):
+        """Create payment intent for Stripe/PayPal"""
+        from .payment import process_payment
+        
+        order = self.get_object()
+        
+        # Check if order is already paid
+        if order.payment_status == 'PAID':
+            return Response(
+                {'error': 'Order is already paid'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        payment_method = request.data.get('payment_method', order.payment_method)
+        
+        # Process payment
+        result = process_payment(order, payment_method)
+        
+        if result.get('success'):
+            # Update order with payment intent details
+            if 'payment_intent_id' in result:
+                order.transaction_id = result['payment_intent_id']
+                order.payment_status = 'PENDING'
+                order.save()
+            
+            return Response(result)
+        else:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def confirm_payment(self, request, pk=None):
+        """Confirm payment completion"""
+        from .payment import confirm_payment_for_order
+        
+        order = self.get_object()
+        payment_intent_id = request.data.get('payment_intent_id')
+        
+        if not payment_intent_id:
+            return Response(
+                {'error': 'payment_intent_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        result = confirm_payment_for_order(order, payment_intent_id)
+        
+        if result.get('success'):
+            # Update order status
+            order.status = Order.OrderStatus.PROCESSING
+            order.paid_at = timezone.now()
+            order.save()
+            
+            serializer = OrderSerializer(order)
+            return Response({
+                'message': 'Payment confirmed successfully',
+                'order': serializer.data
+            })
+        else:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def refund(self, request, pk=None):
+        """Process refund for order (admin only)"""
+        from .payment import process_refund
+        
+        if not request.user.is_admin:
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        order = self.get_object()
+        amount = request.data.get('amount')  # None for full refund
+        
+        if amount:
+            from decimal import Decimal
+            amount = Decimal(str(amount))
+        
+        result = process_refund(order, amount)
+        
+        if result.get('success'):
+            serializer = OrderSerializer(order)
+            return Response({
+                'message': 'Refund processed successfully',
+                'refund': result,
+                'order': serializer.data
+            })
+        else:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
 
 
 class FavoriteViewSet(viewsets.ModelViewSet):

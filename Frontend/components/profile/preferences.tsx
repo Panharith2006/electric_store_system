@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function Preferences() {
+  const [mounted, setMounted] = useState(false)
   const [preferences, setPreferences] = useState({
     emailNotifications: true,
     smsNotifications: false,
@@ -18,8 +19,16 @@ export function Preferences() {
     currency: "usd",
   })
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const handleSave = () => {
     console.log("[v0] Saving preferences:", preferences)
+  }
+
+  if (!mounted) {
+    return null
   }
 
   return (
@@ -89,63 +98,20 @@ export function Preferences() {
           </div>
 
           <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
+            {/* <div className="space-y-0.5">
               <Label htmlFor="newsletter" className="text-foreground">
                 Newsletter
               </Label>
               <p className="text-xs text-muted-foreground">Subscribe to our newsletter</p>
-            </div>
-            <Switch
+            </div> */}
+            {/* <Switch
               id="newsletter"
               checked={preferences.newsletter}
               onCheckedChange={(checked) => setPreferences({ ...preferences, newsletter: checked })}
-            />
+            /> */}
           </div>
         </div>
 
-        <div className="space-y-4 border-t border-border pt-6">
-          <h3 className="text-sm font-semibold text-foreground">Regional Settings</h3>
-
-          <div className="space-y-2">
-            <Label htmlFor="language" className="text-foreground">
-              Language
-            </Label>
-            <Select
-              value={preferences.language}
-              onValueChange={(value) => setPreferences({ ...preferences, language: value })}
-            >
-              <SelectTrigger id="language" className="bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="es">Spanish</SelectItem>
-                <SelectItem value="fr">French</SelectItem>
-                <SelectItem value="de">German</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="currency" className="text-foreground">
-              Currency
-            </Label>
-            <Select
-              value={preferences.currency}
-              onValueChange={(value) => setPreferences({ ...preferences, currency: value })}
-            >
-              <SelectTrigger id="currency" className="bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="usd">USD ($)</SelectItem>
-                <SelectItem value="eur">EUR (€)</SelectItem>
-                <SelectItem value="gbp">GBP (£)</SelectItem>
-                <SelectItem value="jpy">JPY (¥)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
 
         <Button onClick={handleSave} className="w-full">
           Save Preferences

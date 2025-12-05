@@ -1,13 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCart } from "@/hooks/use-cart"
 import { useOrders } from "@/hooks/use-orders"
 import { ShippingForm } from "./shipping-form"
 import { PaymentForm } from "./payment-form"
-import { OrderSummary } from "./order-summary"
+import dynamic from "next/dynamic"
+
+const OrderSummary = dynamic(() => import("./order-summary").then((mod) => mod.OrderSummary), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full animate-pulse rounded-md bg-muted" />,
+})
 import { useToast } from "@/hooks/use-toast"
 
 export function CheckoutPage() {
@@ -23,14 +28,85 @@ export function CheckoutPage() {
   const tax = subtotal * 0.08
   const total = subtotal + shipping + tax
 
-  if (items.length === 0) {
-    router.push("/cart")
-    return null
-  }
+  const [redirectingToCart, setRedirectingToCart] = useState(false)
 
-  const handleShippingSubmit = (data: any) => {
-    setShippingData(data)
-    setStep("payment")
+  useEffect(() => {
+    // Previously we auto-redirected to /cart when there were no items.
+    // That made the checkout page impossible to test. Instead, keep the
+    // page open and show an informational message while allowing the
+    // shipping/payment forms to be filled (useful for testing guest checkout).
+    // If you prefer strict behavior (enforce items before checkout),
+    // set redirecting behavior back.
+    if (items.length === 0) {
+      setRedirectingToCart(false)
+    }
+  }, [items, router])
+
+  // If you prefer the old redirect behavior enable the following line:
+  // if (redirectingToCart) return null
+
+  const handleShippingSubmit = async (data: any) => {
+    // Before proceeding, validate stock availability for items in cart
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api"
+
+      // Fetch fresh product data for each unique product in the cart
+      const productIds = Array.from(new Set(items.map((it) => it.product.id)))
+      const freshMap: Record<string, any> = {}
+
+      await Promise.all(
+        productIds.map(async (pid) => {
+          try {
+            const res = await fetch(`${API_BASE}/products/products/${pid}/`, { cache: 'no-store' })
+            if (res.ok) {
+              const json = await res.json()
+              freshMap[String(pid)] = json
+            }
+          } catch (err) {
+            // ignore network errors for individual products
+          }
+        }),
+      )
+
+      const insufficient: string[] = []
+
+      for (const it of items) {
+        const pid = String(it.product.id)
+        const variantId = it.selectedVariant.id
+        const qty = it.quantity
+
+        const fresh = freshMap[pid]
+        let available = undefined as number | undefined
+
+        if (fresh && Array.isArray(fresh.variants)) {
+          const fv = fresh.variants.find((v: any) => String(v.id) === String(variantId))
+          if (fv) available = Number(fv.stock ?? fv.quantity ?? fv.stock_level ?? 0)
+        }
+
+        // If we couldn't fetch fresh info, fall back to client-side product info
+        if (available === undefined) {
+          const clientVariant = it.product.variants?.find((v: any) => String(v.id) === String(variantId))
+          if (clientVariant) available = Number(clientVariant.stock ?? 0)
+        }
+
+        if ((available ?? 0) < qty) {
+          insufficient.push(`${it.product.name} (${it.selectedVariant.storage} - ${it.selectedVariant.color})`)
+        }
+      }
+
+      if (insufficient.length > 0) {
+        toast({ title: "Insufficient stock", description: `Not enough stock for: ${insufficient.join(', ')}`, variant: "destructive" })
+        return
+      }
+
+      setShippingData(data)
+      setStep("payment")
+    } catch (e) {
+      // On error, allow the flow but warn the user
+      toast({ title: "Stock check failed", description: "Could not verify stock. Proceeding with checkout.", variant: "warning" })
+      setShippingData(data)
+      setStep("payment")
+    }
   }
 
   const handlePaymentSubmit = (paymentData: any) => {
@@ -73,7 +149,7 @@ export function CheckoutPage() {
 
       <div className="grid gap-8 lg:grid-cols-3">
         {/* Checkout Forms */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 relative z-10">
           {/* Shipping Information */}
           <Card>
             <CardHeader>
@@ -125,8 +201,8 @@ export function CheckoutPage() {
         </div>
 
         {/* Order Summary */}
-        <div className="lg:col-span-1">
-          <OrderSummary items={items} subtotal={subtotal} shipping={shipping} tax={tax} total={total} />
+        <div className="lg:col-span-1 relative z-0">
+          <OrderSummary />
         </div>
       </div>
     </div>

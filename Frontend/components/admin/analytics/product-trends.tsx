@@ -1,115 +1,83 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Legend } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import apiClient from "@/lib/api-client"
 
-const productTrendsData = {
-  smartphones: {
-    name: "Smartphones",
-    trend: "up",
-    change: 15.3,
-    data: [
-      { year: "2022 Q1", sales: 2500 },
-      { year: "2022 Q2", sales: 2800 },
-      { year: "2022 Q3", sales: 3200 },
-      { year: "2022 Q4", sales: 3800 },
-      { year: "2023 Q1", sales: 3500 },
-      { year: "2023 Q2", sales: 4100 },
-      { year: "2023 Q3", sales: 4600 },
-      { year: "2023 Q4", sales: 5200 },
-      { year: "2024 Q1", sales: 4900 },
-      { year: "2024 Q2", sales: 5800 },
-      { year: "2024 Q3", sales: 6200 },
-      { year: "2024 Q4", sales: 6800 },
-    ],
-  },
-  laptops: {
-    name: "Laptops",
-    trend: "up",
-    change: 8.7,
-    data: [
-      { year: "2022 Q1", sales: 1800 },
-      { year: "2022 Q2", sales: 1900 },
-      { year: "2022 Q3", sales: 2100 },
-      { year: "2022 Q4", sales: 2400 },
-      { year: "2023 Q1", sales: 2200 },
-      { year: "2023 Q2", sales: 2500 },
-      { year: "2023 Q3", sales: 2700 },
-      { year: "2023 Q4", sales: 3000 },
-      { year: "2024 Q1", sales: 2800 },
-      { year: "2024 Q2", sales: 3200 },
-      { year: "2024 Q3", sales: 3400 },
-      { year: "2024 Q4", sales: 3600 },
-    ],
-  },
-  tablets: {
-    name: "Tablets",
-    trend: "stable",
-    change: 2.1,
-    data: [
-      { year: "2022 Q1", sales: 1200 },
-      { year: "2022 Q2", sales: 1250 },
-      { year: "2022 Q3", sales: 1180 },
-      { year: "2022 Q4", sales: 1320 },
-      { year: "2023 Q1", sales: 1280 },
-      { year: "2023 Q2", sales: 1350 },
-      { year: "2023 Q3", sales: 1290 },
-      { year: "2023 Q4", sales: 1400 },
-      { year: "2024 Q1", sales: 1360 },
-      { year: "2024 Q2", sales: 1420 },
-      { year: "2024 Q3", sales: 1380 },
-      { year: "2024 Q4", sales: 1450 },
-    ],
-  },
-  headphones: {
-    name: "Headphones",
-    trend: "down",
-    change: -5.2,
-    data: [
-      { year: "2022 Q1", sales: 3200 },
-      { year: "2022 Q2", sales: 3400 },
-      { year: "2022 Q3", sales: 3600 },
-      { year: "2022 Q4", sales: 3800 },
-      { year: "2023 Q1", sales: 3500 },
-      { year: "2023 Q2", sales: 3300 },
-      { year: "2023 Q3", sales: 3100 },
-      { year: "2023 Q4", sales: 3000 },
-      { year: "2024 Q1", sales: 2900 },
-      { year: "2024 Q2", sales: 2800 },
-      { year: "2024 Q3", sales: 2700 },
-      { year: "2024 Q4", sales: 2600 },
-    ],
-  },
+type TrendItem = {
+  id: string
+  product: string
+  product_name: string
+  year?: number
+  month?: number
+  period_label?: string
+  total_units_sold?: number
+  total_revenue?: number
 }
 
 export function ProductTrends() {
-  const [selectedCategory, setSelectedCategory] = useState<keyof typeof productTrendsData>("smartphones")
+  const { token } = useAuth()
+  const [trends, setTrends] = useState<TrendItem[]>([])
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
 
-  const categoryData = productTrendsData[selectedCategory]
+  useEffect(() => {
+    let cancelled = false
+    const fetchTrends = async () => {
+      if (!token) return
+      try {
+        const res = await apiClient.getProductTrendsList(token)
+        if (!res.error && Array.isArray(res.data)) {
+          if (!cancelled) setTrends(res.data as TrendItem[])
+        } else if (!res.error && res.data && Array.isArray((res.data as any).results)) {
+          if (!cancelled) setTrends((res.data as any).results)
+        }
+      } catch (e) {
+        // ignore for now
+      }
+    }
+
+    fetchTrends()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  const productNames = Array.from(new Set(trends.map((t) => t.product_name).filter(Boolean)))
+  useEffect(() => {
+    if (!selectedProduct && productNames.length > 0) setSelectedProduct(productNames[0])
+  }, [productNames, selectedProduct])
+
+  const selectedData = trends.filter((t) => t.product_name === selectedProduct).map((t) => ({ period: t.period_label || `${t.year || ''}-${t.month || ''}`, sales: t.total_units_sold || 0 }))
+
+  const getTrendDirection = (arr: TrendItem[]) => {
+    if (arr.length < 2) return 'stable'
+    const first = arr[0].total_units_sold || 0
+    const last = arr[arr.length - 1].total_units_sold || 0
+    if (last > first) return 'up'
+    if (last < first) return 'down'
+    return 'stable'
+  }
+
+  const trendSummary = (name: string) => {
+    const items = trends.filter((t) => t.product_name === name).sort((a, b) => (a.period_label || '').localeCompare(b.period_label || ''))
+    const direction = getTrendDirection(items)
+    const change = items.length >= 2 ? (((items[items.length - 1].total_units_sold || 0) - (items[0].total_units_sold || 0)) / Math.max(1, items[0].total_units_sold || 1)) * 100 : 0
+    return { direction, change: Math.round(change * 10) / 10 }
+  }
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
-      case "up":
+      case 'up':
         return <TrendingUp className="h-4 w-4 text-green-600" />
-      case "down":
+      case 'down':
         return <TrendingDown className="h-4 w-4 text-red-600" />
       default:
         return <Minus className="h-4 w-4 text-yellow-600" />
-    }
-  }
-
-  const getTrendColor = (trend: string) => {
-    switch (trend) {
-      case "up":
-        return "text-green-600"
-      case "down":
-        return "text-red-600"
-      default:
-        return "text-yellow-600"
     }
   }
 
@@ -118,59 +86,49 @@ export function ProductTrends() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Product Trends (3 Years)</h2>
-          <p className="text-sm text-muted-foreground">Track product category performance over time</p>
+          <p className="text-sm text-muted-foreground">Track product performance over time</p>
         </div>
-        <Select value={selectedCategory} onValueChange={(value: any) => setSelectedCategory(value)}>
-          <SelectTrigger className="w-[200px]">
+        <Select value={selectedProduct ?? undefined} onValueChange={(v: any) => setSelectedProduct(v)}>
+          <SelectTrigger className="w-[240px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(productTrendsData).map(([key, data]) => (
-              <SelectItem key={key} value={key}>
-                {data.name}
-              </SelectItem>
+            {productNames.map((name) => (
+              <SelectItem key={name} value={name}>{name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        {Object.entries(productTrendsData).map(([key, data]) => (
-          <Card key={key} className={selectedCategory === key ? "border-primary" : ""}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{data.name}</CardTitle>
-              {getTrendIcon(data.trend)}
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${getTrendColor(data.trend)}`}>
-                {data.change > 0 ? "+" : ""}
-                {data.change}%
-              </div>
-              <p className="text-xs text-muted-foreground capitalize">{data.trend} trend</p>
-            </CardContent>
-          </Card>
-        ))}
+        {productNames.map((name) => {
+          const s = trendSummary(name)
+          return (
+            <Card key={name} className={selectedProduct === name ? 'border-primary' : ''}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{name}</CardTitle>
+                {getTrendIcon(s.direction)}
+              </CardHeader>
+              <CardContent>
+                <div className={`${s.direction === 'up' ? 'text-green-600' : s.direction === 'down' ? 'text-red-600' : 'text-yellow-600'} text-2xl font-bold`}>{s.change}%</div>
+                <p className="text-xs text-muted-foreground">Trend over selected period</p>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{categoryData.name} - 3 Year Trend</CardTitle>
-          <CardDescription>Quarterly sales performance from 2022 to 2024</CardDescription>
+          <CardTitle>{selectedProduct ?? 'Product'} - Trend</CardTitle>
+          <CardDescription>Sales performance</CardDescription>
         </CardHeader>
         <CardContent>
-          <ChartContainer
-            config={{
-              sales: {
-                label: "Sales",
-                color: "hsl(var(--chart-1))",
-              },
-            }}
-            className="h-[400px]"
-          >
+          <ChartContainer config={{ sales: { label: 'Sales', color: 'hsl(var(--chart-1))' } }} className="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={categoryData.data}>
+              <LineChart data={selectedData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="year" angle={-45} textAnchor="end" height={80} />
+                <XAxis dataKey="period" angle={-45} textAnchor="end" height={80} />
                 <YAxis />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend />
@@ -178,100 +136,6 @@ export function ProductTrends() {
               </LineChart>
             </ResponsiveContainer>
           </ChartContainer>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Trend Analysis</CardTitle>
-          <CardDescription>Key insights and recommendations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {categoryData.trend === "up" && (
-              <>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-green-100 p-2 dark:bg-green-900/20">
-                    <TrendingUp className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Strong Growth Trajectory</p>
-                    <p className="text-sm text-muted-foreground">
-                      {categoryData.name} showing consistent growth of {categoryData.change}% over the past 3 years.
-                      Consider increasing inventory and marketing budget.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900/20">
-                    <Package className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Recommendation</p>
-                    <p className="text-sm text-muted-foreground">
-                      Stock up on popular models and consider expanding product variants to capitalize on growing
-                      demand.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-            {categoryData.trend === "down" && (
-              <>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-red-100 p-2 dark:bg-red-900/20">
-                    <TrendingDown className="h-4 w-4 text-red-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Declining Sales</p>
-                    <p className="text-sm text-muted-foreground">
-                      {categoryData.name} experiencing a {Math.abs(categoryData.change)}% decline. Immediate action
-                      required to reverse the trend.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-orange-100 p-2 dark:bg-orange-900/20">
-                    <AlertTriangle className="h-4 w-4 text-orange-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Action Required</p>
-                    <p className="text-sm text-muted-foreground">
-                      Consider promotional campaigns, bundle deals, or product refresh to stimulate demand. Review
-                      pricing strategy.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-            {categoryData.trend === "stable" && (
-              <>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-yellow-100 p-2 dark:bg-yellow-900/20">
-                    <Minus className="h-4 w-4 text-yellow-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Stable Performance</p>
-                    <p className="text-sm text-muted-foreground">
-                      {categoryData.name} maintaining steady sales with {categoryData.change}% change. Market is mature
-                      and predictable.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900/20">
-                    <Lightbulb className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Opportunity</p>
-                    <p className="text-sm text-muted-foreground">
-                      Explore innovation opportunities or new product lines to drive growth in this stable category.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
         </CardContent>
       </Card>
     </div>

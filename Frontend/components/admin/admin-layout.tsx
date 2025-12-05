@@ -1,15 +1,38 @@
 "use client"
 
-import type React from "react"
+import React, { useEffect, useState } from "react"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/contexts/auth-context"
 import { Package, FolderTree, ArrowLeft, Warehouse, BarChart3, TrendingUp } from "lucide-react"
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
+
+
+function AuthLogout() {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  try {
+    const { logout, isAuthenticated } = useAuth()
+    if (!mounted) return null
+    if (!isAuthenticated) return null
+    return (
+      <Button variant="ghost" onClick={() => logout()} className="gap-2">
+        Logout
+      </Button>
+    )
+  } catch (e) {
+    return null
+  }
+}
   const navItems = [
     { href: "/admin/products", label: "Products", icon: Package },
     { href: "/admin/categories", label: "Categories", icon: FolderTree },
@@ -40,12 +63,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 })}
               </nav>
             </div>
-            <Link href="/">
-              <Button variant="outline" className="gap-2 bg-transparent">
-                <ArrowLeft className="h-4 w-4" />
-                Back to Store
-              </Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/">
+                {/* <Button variant="outline" className="gap-2 bg-transparent">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Store
+                </Button> */}
+              </Link>
+              {/* Logout - shown when authenticated */}
+              <AuthLogout />
+            </div>
           </div>
         </div>
       </header>

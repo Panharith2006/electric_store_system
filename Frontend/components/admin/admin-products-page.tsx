@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Plus, Search } from "lucide-react"
@@ -13,7 +14,40 @@ export function AdminProductsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<string | null>(null)
-  const { products } = useProducts()
+  // subscribe specifically to `products` so this component re-renders
+  // only when the products array changes (Zustand selector)
+  const products = useProducts((s) => s.products)
+
+  useEffect(() => {
+    // Ensure we have fresh products when the admin page mounts.
+    // The `useProducts` store already fetches on module load, but in dev
+    // or after backend changes this ensures the admin sees current data.
+    ;(async () => {
+      try {
+        const res = await (await import("@/lib/api-client")).default.getProducts()
+        if (res && !res.error && Array.isArray(res.data)) {
+          const remoteProducts = (res.data as any[]).map((p) => ({
+            id: String(p.id ?? p.pk ?? p.sku ?? p.slug ?? p.name),
+            name: p.name ?? p.title ?? "",
+            description: p.description ?? "",
+            price: Number(p.price ?? p.base_price ?? 0),
+            basePrice: Number(p.price ?? p.base_price ?? 0),
+            category: p.category ?? (p.category_name ?? ""),
+            brand: p.brand ?? (p.brand_name ?? ""),
+            image: p.image ?? p.thumbnail ?? undefined,
+            inStock: typeof p.in_stock === "boolean" ? p.in_stock : (p.total_stock ?? 0) > 0,
+            rating: Number(p.rating ?? 0),
+            variants: Array.isArray(p.variants)
+              ? p.variants.map((v: any) => ({ id: String(v.id ?? v.sku ?? v.name), name: v.name ?? "", price: Number(v.price ?? v.list_price ?? 0), stock: Number(v.stock ?? v.quantity ?? 0) }))
+              : [],
+          }))
+          ;(useProducts as any).setState({ products: remoteProducts })
+        }
+      } catch (e) {
+        // ignore — useProducts has fallbacks
+      }
+    })()
+  }, [])
 
   const filteredProducts = products.filter(
     (product) =>

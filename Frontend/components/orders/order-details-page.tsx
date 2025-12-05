@@ -10,6 +10,7 @@ import { ChevronLeft, MapPin, CreditCard, Package } from "lucide-react";
 import { useOrders } from "@/hooks/use-orders";
 import { format } from "date-fns";
 import { OrderTracking } from "./order-tracking";
+import { useEffect, useState } from "react";
 
 const statusColors = {
   pending: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
@@ -28,16 +29,32 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
   const { getOrderById } = useOrders();
   const order = getOrderById(orderId);
 
-  if (!order) {
+  const [fallbackOrder, setFallbackOrder] = useState<typeof order | null>(null);
+
+  useEffect(() => {
+    if (order) return;
+    try {
+      const raw = localStorage.getItem("orders-storage");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const ordersArr = parsed?.orders || parsed?.state?.orders || parsed?.state || null;
+      if (Array.isArray(ordersArr)) {
+        const found = ordersArr.find((o: any) => String(o.id) === String(orderId));
+        if (found) setFallbackOrder(found);
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+  }, [order, orderId]);
+
+  const displayOrder = order || fallbackOrder;
+
+  if (!displayOrder) {
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="mx-auto max-w-md text-center">
-          <h2 className="mb-2 text-2xl font-bold text-foreground">
-            Order not found
-          </h2>
-          <p className="mb-6 text-muted-foreground">
-            The order you're looking for doesn't exist
-          </p>
+          <h2 className="mb-2 text-2xl font-bold text-foreground">Order not found</h2>
+          <p className="mb-6 text-muted-foreground">The order you're looking for doesn't exist</p>
           <Link href="/orders">
             <Button>View All Orders</Button>
           </Link>
@@ -62,15 +79,15 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="mb-2 text-3xl font-bold text-foreground">
-              {order.orderNumber}
+              {displayOrder.orderNumber}
             </h1>
             <p className="text-muted-foreground">
               Placed on{" "}
-              {format(new Date(order.date), "MMMM d, yyyy 'at' h:mm a")}
+              {format(new Date(displayOrder.date), "MMMM d, yyyy 'at' h:mm a")}
             </p>
           </div>
-          <Badge className={statusColors[order.status]} variant="outline">
-            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+          <Badge className={statusColors[displayOrder.status]} variant="outline">
+            {displayOrder.status.charAt(0).toUpperCase() + displayOrder.status.slice(1)}
           </Badge>
         </div>
       </div>
@@ -79,7 +96,7 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Order Tracking */}
-          <OrderTracking order={order} />
+          <OrderTracking order={displayOrder} />
 
           {/* Order Items */}
           <Card>
@@ -90,7 +107,7 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {order.items.map((item, index) => {
+              {displayOrder.items.map((item, index) => {
                 const price = Number(item.price) || 0;
                 const quantity = Number(item.quantity) || 0;
                 return (
@@ -127,7 +144,7 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
                         </p>
                       </div>
                     </div>
-                    {index < order.items.length - 1 && (
+                    {index < displayOrder.items.length - 1 && (
                       <Separator className="mt-4" />
                     )}
                   </div>
@@ -149,21 +166,21 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium text-foreground">
-                    ${order.subtotal.toFixed(2)}
+                    ${displayOrder.subtotal.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Shipping</span>
                   <span className="font-medium text-foreground">
-                    {order.shipping === 0
+                    {displayOrder.shipping === 0
                       ? "FREE"
-                      : `$${order.shipping.toFixed(2)}`}
+                      : `$${displayOrder.shipping.toFixed(2)}`}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Tax</span>
                   <span className="font-medium text-foreground">
-                    ${order.tax.toFixed(2)}
+                    ${displayOrder.tax.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -173,7 +190,7 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
               <div className="flex justify-between text-lg font-bold">
                 <span className="text-foreground">Total</span>
                 <span className="text-foreground">
-                  ${order.total.toFixed(2)}
+                  ${displayOrder.total.toFixed(2)}
                 </span>
               </div>
             </CardContent>
@@ -190,11 +207,11 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
             <CardContent>
               <div className="space-y-1 text-sm">
                 <p className="text-foreground">
-                  {order.shippingAddress.street}
+                  {displayOrder.shippingAddress.street}
                 </p>
                 <p className="text-foreground">
-                  {order.shippingAddress.city}, {order.shippingAddress.state}{" "}
-                  {order.shippingAddress.zipCode}
+                  {displayOrder.shippingAddress.city}, {displayOrder.shippingAddress.state}{" "}
+                  {displayOrder.shippingAddress.zipCode}
                 </p>
               </div>
             </CardContent>
@@ -209,7 +226,7 @@ export function OrderDetailsPage({ orderId }: OrderDetailsPageProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-foreground">{order.paymentMethod}</p>
+              <p className="text-sm text-foreground">{displayOrder.paymentMethod}</p>
             </CardContent>
           </Card>
         </div>

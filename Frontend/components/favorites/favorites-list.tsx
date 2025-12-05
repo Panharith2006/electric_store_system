@@ -1,13 +1,54 @@
 "use client"
 
-import { products } from "@/lib/products-data"
+import { useState, useEffect } from "react"
+import type { Product } from "@/lib/products-data"
 import { ProductCard } from "@/components/products/product-card"
 import { useFavorites } from "@/hooks/use-favorites"
 import { Heart } from "lucide-react"
 
 export function FavoritesList() {
   const { favorites } = useFavorites()
-  const favoriteProducts = products.filter((product) => favorites.includes(product.id))
+  const [favoriteProducts, setFavoriteProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Fetch favorite products from API based on favorites IDs
+  useEffect(() => {
+      if (favorites.length === 0) {
+        setFavoriteProducts([])
+        setLoading(false)
+        return
+      }
+
+      const fetchFavorites = async () => {
+        try {
+          // Use centralized API client to fetch full product details (including variants)
+          const { apiClient } = await import("@/lib/api-client")
+          const proms = favorites.map((id) => apiClient.getProduct(id))
+          const results = await Promise.all(proms)
+          const products: any[] = []
+          for (const res of results) {
+            if (res && !res.error && res.data) {
+              products.push(res.data)
+            }
+          }
+          setFavoriteProducts(products)
+        } catch (err) {
+          console.error("Failed to fetch favorite products:", err)
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      fetchFavorites()
+    }, [favorites])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <p className="text-muted-foreground">Loading your favorites...</p>
+      </div>
+    )
+  }
 
   return (
     <div>

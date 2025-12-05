@@ -2,7 +2,18 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
+function Input({ className, type, value, ...props }: React.ComponentProps<'input'>) {
+  // Normalize undefined value -> empty string to avoid uncontrolled -> controlled warnings
+  // Avoid setting `value` on file inputs (read-only) so they remain uncontrolled
+  const inputProps: any = { ...props }
+  // Only set a `value` prop when the caller explicitly provided one.
+  // This preserves uncontrolled behavior for inputs registered via
+  // `react-hook-form`'s `register`, avoiding an uncontrolled->controlled
+  // transition that makes inputs non-editable.
+  if (type !== "file" && value !== undefined) {
+    inputProps.value = value
+  }
+
   return (
     <input
       type={type}
@@ -13,7 +24,7 @@ function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
         'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
         className,
       )}
-      {...props}
+      {...inputProps}
     />
   )
 }

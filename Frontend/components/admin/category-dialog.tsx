@@ -16,7 +16,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useCategories, type Category } from "@/hooks/use-categories"
+import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
+import apiClient from "@/lib/api-client"
 
 interface CategoryDialogProps {
   open: boolean
@@ -26,6 +28,7 @@ interface CategoryDialogProps {
 
 export function CategoryDialog({ open, onClose, categoryId }: CategoryDialogProps) {
   const { categories, addCategory, updateCategory } = useCategories()
+  const { token } = useAuth()
   const { toast } = useToast()
 
   const editingCategory = categoryId ? categories.find((c) => c.id === categoryId) : null
@@ -57,21 +60,39 @@ export function CategoryDialog({ open, onClose, categoryId }: CategoryDialogProp
       description: formData.description,
     }
 
-    if (editingCategory) {
-      updateCategory(editingCategory.id, categoryData)
-      toast({
-        title: "Category updated",
-        description: "The category has been updated successfully",
-      })
-    } else {
-      addCategory(categoryData)
-      toast({
-        title: "Category added",
-        description: "The category has been added successfully",
-      })
-    }
+    ;(async () => {
+      if (editingCategory) {
+        await updateCategory(editingCategory.id, categoryData, token ?? undefined)
+        toast({
+          title: "Category updated",
+          description: "The category has been updated successfully",
+        })
+      } else {
+        await addCategory(categoryData, token ?? undefined)
+        toast({
+          title: "Category added",
+          description: "The category has been added successfully",
+        })
+      }
 
-    onClose()
+      // Refetch categories to ensure UI is in sync
+      try {
+        const categoriesRes = await apiClient.getCategories()
+        if (categoriesRes && !categoriesRes.error && Array.isArray(categoriesRes.data)) {
+          const remoteCategories = categoriesRes.data.map((c: any) => ({
+            id: String(c.id ?? c.name),
+            name: c.name ?? "",
+            description: c.description ?? "",
+            productCount: c.product_count ?? 0
+          }))
+          ;(useCategories as any).setState({ categories: remoteCategories })
+        }
+      } catch (e) {
+        console.warn("Failed to refetch categories:", e)
+      }
+
+      onClose()
+    })()
   }
 
   return (

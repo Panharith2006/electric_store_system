@@ -20,6 +20,10 @@ class User(AbstractUser):
         choices=Role.choices,
         default=Role.USER
     )
+    # Override email field to allow NULL/blank for migration safety.
+    # We'll add the unique constraint in a follow-up migration after
+    # converting any empty-string emails to NULL.
+    email = models.EmailField(blank=True, null=True)
     
     # Email verification
     email_verified = models.BooleanField(default=False)

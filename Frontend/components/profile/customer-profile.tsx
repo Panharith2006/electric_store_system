@@ -1,4 +1,5 @@
 "use client"
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PersonalInfo } from "./personal-info"
 import { AddressManagement } from "./address-management"
@@ -7,6 +8,7 @@ import { Preferences } from "./preferences"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Package } from "lucide-react"
+
 
 export function CustomerProfile() {
   return (

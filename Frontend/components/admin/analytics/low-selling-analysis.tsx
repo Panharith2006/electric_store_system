@@ -1,92 +1,64 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, TrendingDown, Tag, Trash2 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { useAuth } from "@/contexts/auth-context"
+import apiClient from "@/lib/api-client"
 
-const lowSellingProducts = [
-  {
-    id: 1,
-    name: "Sony WH-1000XM5",
-    category: "Headphones",
-    unitsSold: 23,
-    stock: 145,
-    daysInStock: 89,
-    lastSale: "12 days ago",
-    price: 399,
-    status: "critical",
-    image: "/sony-headphones.png",
-    recommendations: ["Price reduction", "Bundle deal", "Clearance sale"],
-  },
-  {
-    id: 2,
-    name: "Dell XPS 15",
-    category: "Laptops",
-    unitsSold: 34,
-    stock: 67,
-    daysInStock: 72,
-    lastSale: "8 days ago",
-    price: 1899,
-    status: "warning",
-    image: "/dell-laptop.png",
-    recommendations: ["Marketing campaign", "Student discount", "Trade-in program"],
-  },
-  {
-    id: 3,
-    name: "Google Pixel Watch 2",
-    category: "Wearables",
-    unitsSold: 18,
-    stock: 98,
-    daysInStock: 95,
-    lastSale: "15 days ago",
-    price: 349,
-    status: "critical",
-    image: "/pixel-watch.jpg",
-    recommendations: ["Discontinue", "Deep discount", "Bundle with Pixel phone"],
-  },
-  {
-    id: 4,
-    name: "Microsoft Surface Go 3",
-    category: "Tablets",
-    unitsSold: 41,
-    stock: 82,
-    daysInStock: 68,
-    lastSale: "6 days ago",
-    price: 549,
-    status: "warning",
-    image: "/surface-tablet.jpg",
-    recommendations: ["Business promotion", "Education discount", "Accessory bundle"],
-  },
-  {
-    id: 5,
-    name: "Bose QuietComfort Earbuds II",
-    category: "Audio",
-    unitsSold: 29,
-    stock: 124,
-    daysInStock: 81,
-    lastSale: "10 days ago",
-    price: 299,
-    status: "warning",
-    image: "/bose-earbuds.jpg",
-    recommendations: ["Flash sale", "Influencer partnership", "Gift promotion"],
-  },
-]
+type LowProduct = {
+  id: string
+  product_name: string
+  units_sold: number
+  revenue: number
+  variant_details?: any
+}
 
 export function LowSellingAnalysis() {
-  const criticalCount = lowSellingProducts.filter((p) => p.status === "critical").length
-  const warningCount = lowSellingProducts.filter((p) => p.status === "warning").length
-  const totalStock = lowSellingProducts.reduce((sum, p) => sum + p.stock, 0)
-  const totalValue = lowSellingProducts.reduce((sum, p) => sum + p.stock * p.price, 0)
+  const { token } = useAuth()
+  const [items, setItems] = useState<LowProduct[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchLow = async () => {
+      if (!token) return
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await apiClient.getLowSellingProducts(token)
+        if (!res.error && Array.isArray(res.data)) {
+          if (!cancelled) setItems(res.data as LowProduct[])
+        } else if (!res.error && res.data && Array.isArray((res.data as any).results)) {
+          if (!cancelled) setItems((res.data as any).results)
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || "Failed to load low selling products")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchLow()
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  const criticalCount = items.filter((i) => (i.units_sold || 0) < 10).length
+  const warningCount = items.length - criticalCount
+  const totalStock = 0
+  const totalValue = items.reduce((sum, p) => sum + ((p.revenue || 0)), 0)
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">Low Selling Product Analysis</h2>
-        <p className="text-sm text-muted-foreground">
-          Identify underperforming products and take action to improve sales or clear inventory
-        </p>
+        <p className="text-sm text-muted-foreground">Identify underperforming products and take action</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -115,7 +87,7 @@ export function LowSellingAnalysis() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Excess Stock</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <Tag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalStock}</div>
@@ -135,52 +107,28 @@ export function LowSellingAnalysis() {
         </Card>
       </div>
 
-      <Card className="border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-red-900 dark:text-red-100">
-            <AlertTriangle className="h-5 w-5" />
-            Action Required
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-red-800 dark:text-red-200">
-          <p>
-            You have {criticalCount} products with critically low sales performance. These items have been in stock for
-            over 80 days with minimal movement. Consider implementing promotional strategies or discontinuing these
-            products to free up capital and warehouse space.
-          </p>
-        </CardContent>
-      </Card>
-
       <div className="space-y-4">
-        {lowSellingProducts.map((product) => (
-          <Card key={product.id} className={product.status === "critical" ? "border-red-200" : "border-yellow-200"}>
+        {items.map((p) => (
+          <Card key={p.id} className={"border-yellow-200"}>
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex gap-4">
-                  <img
-                    src={product.image || "/placeholder.svg"}
-                    alt={product.name}
-                    className="h-16 w-16 rounded-lg object-cover"
-                  />
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <CardTitle className="text-lg">{product.name}</CardTitle>
-                      <Badge variant={product.status === "critical" ? "destructive" : "secondary"}>
-                        {product.status === "critical" ? "Critical" : "Warning"}
-                      </Badge>
-                      <Badge variant="outline">{product.category}</Badge>
+                      <CardTitle className="text-lg">{p.product_name}</CardTitle>
+                      <Badge variant={"outline"}>{/* category placeholder */}</Badge>
                     </div>
                     <div className="flex gap-4 text-sm text-muted-foreground">
-                      <span>{product.unitsSold} units sold</span>
-                      <span>{product.stock} in stock</span>
-                      <span>{product.daysInStock} days in inventory</span>
-                      <span>Last sale: {product.lastSale}</span>
+                      <span>{p.units_sold} units sold</span>
+                      <span>{/* stock not provided */}— in stock</span>
+                      <span>{/* daysInStock */}— days in inventory</span>
+                      <span>{/* lastSale */}—</span>
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold">${product.price}</p>
-                  <p className="text-sm text-muted-foreground">Current price</p>
+                  <p className="text-2xl font-bold">${Math.round((p.revenue || 0) / (p.units_sold || 1))}</p>
+                  <p className="text-sm text-muted-foreground">Avg price</p>
                 </div>
               </div>
             </CardHeader>
@@ -188,20 +136,22 @@ export function LowSellingAnalysis() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Sales Performance</span>
-                  <span className="font-medium">{((product.unitsSold / product.stock) * 100).toFixed(1)}% sold</span>
+                  <span className="font-medium">{(((p.units_sold || 0) / Math.max(1, 100)) * 100).toFixed(1)}% sold</span>
                 </div>
-                <Progress value={(product.unitsSold / product.stock) * 100} className="h-2" />
+                <Progress value={(((p.units_sold || 0) / Math.max(1, 100)) * 100)} className="h-2" />
               </div>
 
               <div className="space-y-2">
                 <p className="text-sm font-medium">Recommended Actions:</p>
                 <div className="flex flex-wrap gap-2">
-                  {product.recommendations.map((rec, index) => (
-                    <Badge key={index} variant="outline" className="gap-1">
-                      <Tag className="h-3 w-3" />
-                      {rec}
-                    </Badge>
-                  ))}
+                  <Badge variant="outline" className="gap-1">
+                    <Tag className="h-3 w-3" />
+                    Consider Promotion
+                  </Badge>
+                  <Badge variant="outline" className="gap-1">
+                    <Tag className="h-3 w-3" />
+                    Price Reduction
+                  </Badge>
                 </div>
               </div>
 
@@ -223,37 +173,6 @@ export function LowSellingAnalysis() {
           </Card>
         ))}
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Strategies to Improve Low-Selling Products</CardTitle>
-          <CardDescription>Proven tactics to boost sales or clear inventory</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <h4 className="font-semibold">Promotional Strategies</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li>• Flash sales (24-48 hour limited offers)</li>
-                <li>• Bundle deals with popular products</li>
-                <li>• Buy-one-get-one promotions</li>
-                <li>• Seasonal clearance events</li>
-                <li>• Email marketing to targeted segments</li>
-              </ul>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-semibold">Inventory Management</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li>• Return to supplier if possible</li>
-                <li>• Liquidation to third-party buyers</li>
-                <li>• Donate for tax benefits</li>
-                <li>• Transfer to better-performing locations</li>
-                <li>• Discontinue and focus on winners</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
